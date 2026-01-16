@@ -1,0 +1,53 @@
+const { Pool } = require('pg');
+require('dotenv').config();
+
+// Validate required environment variables
+const requiredEnvVars = ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD'];
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    console.error(`❌ Missing required environment variable: ${envVar}`);
+    process.exit(1);
+  }
+}
+
+const pool = new Pool({
+  host: process.env.DB_HOST,
+  port: parseInt(process.env.DB_PORT, 10),
+  database: process.env.DB_NAME,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  ssl: process.env.DB_SSL === 'true' ? { 
+    rejectUnauthorized: false 
+  } : false,
+  connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT || '5000', 10),
+  idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || '30000', 10),
+  max: parseInt(process.env.DB_MAX_CLIENTS || '20', 10)
+});
+
+// Test the database connection
+pool.query('SELECT NOW()', (err, res) => {
+  if (err) {
+    console.error('❌ Database connection error:', err.message);
+  } else {
+    console.log('✅ Successfully connected to PostgreSQL database');
+    console.log(`   Host: ${process.env.DB_HOST}`);
+    console.log(`   Database: ${process.env.DB_NAME}`);
+    console.log(`   User: ${process.env.DB_USER}`);
+  }
+});
+
+// Handle connection errors
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle client', err);
+  process.exit(-1);
+});
+
+module.exports = {
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { 
+    rejectUnauthorized: false 
+  } : false,
+  max: process.env.DB_MAX_CLIENTS || 20,
+  idleTimeoutMillis: process.env.DB_IDLE_TIMEOUT || 30000,
+  connectionTimeoutMillis: process.env.DB_CONNECTION_TIMEOUT || 5000
+};
