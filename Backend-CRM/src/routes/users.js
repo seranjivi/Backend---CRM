@@ -32,10 +32,18 @@ module.exports = async function (fastify, options) {
         ORDER BY u.created_at DESC
       `);
       
-      return rows;
+      return {
+        data: rows,
+        status: 'success',
+        message: 'Users retrieved successfully'
+      };
     } catch (error) {
       console.error('Get users error:', error);
-      return reply.status(500).send({ message: 'Failed to fetch users' });
+      return reply.status(500).send({ 
+        status: 'error',
+        message: 'Failed to fetch users',
+        error: error.message
+      });
     }
   });
 
@@ -50,9 +58,9 @@ module.exports = async function (fastify, options) {
       // Non-admin users can only view their own profile
       if (!isAdmin && request.user.id !== id) {
         return reply.status(403).send({ 
-          statusCode: 403,
-          error: 'Forbidden',
-          message: 'You can only view your own profile'
+          status: 'error',
+          message: 'You can only view your own profile',
+          error: 'Forbidden'
         });
       }
 
@@ -62,6 +70,7 @@ module.exports = async function (fastify, options) {
           u.full_name, 
           u.email, 
           r.name as role, 
+          u.role_id,
           u.status, 
           u.created_at, 
           u.updated_at,
@@ -82,22 +91,47 @@ module.exports = async function (fastify, options) {
       );
 
       if (rows.length === 0) {
-        return reply.status(404).send({ message: 'User not found' });
+        return reply.status(404).send({ 
+          status: 'error',
+          message: 'User not found'
+        });
       }
 
-      return rows[0];
+      return {
+        data: rows[0],
+        status: 'success',
+        message: 'User retrieved successfully'
+      };
     } catch (error) {
       console.error('Get user by ID error:', error);
-      return reply.status(500).send({ message: 'Failed to fetch user' });
+      return reply.status(500).send({ 
+        status: 'error',
+        message: 'Failed to fetch user',
+        error: error.message
+      });
     }
   });
 
   // Create user (admin only)
   fastify.post('/', {
     schema: createUserSchema,
-  preValidation: [fastify.authenticate, fastify.authorize(['Admin'])]
+    preValidation: [fastify.authenticate, fastify.authorize(['Admin'])]
   }, async (request, reply) => {
-    return register(fastify, request, reply);
+    try {
+      const user = await register(fastify, request, reply);
+      return {
+        data: user,
+        status: 'success',
+        message: 'User created successfully'
+      };
+    } catch (error) {
+      console.error('Create user error:', error);
+      return reply.status(500).send({ 
+        status: 'error',
+        message: 'Failed to create user',
+        error: error.message
+      });
+    }
   });
 
   // Update user status (admin only)
@@ -108,7 +142,10 @@ module.exports = async function (fastify, options) {
     const { status } = request.body;
 
     if (!['active', 'inactive'].includes(status)) {
-      return reply.status(400).send({ message: 'Invalid status' });
+      return reply.status(400).send({ 
+        status: 'error',
+        message: 'Invalid status. Status must be either "active" or "inactive"'
+      });
     }
 
     try {
@@ -118,13 +155,24 @@ module.exports = async function (fastify, options) {
       );
 
       if (rows.length === 0) {
-        return reply.status(404).send({ message: 'User not found' });
+        return reply.status(404).send({ 
+          status: 'error',
+          message: 'User not found' 
+        });
       }
 
-      return { message: `User ${status} successfully` };
+      return {
+        data: { status },
+        status: 'success',
+        message: `User status updated to ${status} successfully`
+      };
     } catch (error) {
       console.error('Update user status error:', error);
-      return reply.status(500).send({ message: 'Failed to update user status' });
+      return reply.status(500).send({ 
+        status: 'error',
+        message: 'Failed to update user status',
+        error: error.message
+      });
     }
   });
 
@@ -140,18 +188,18 @@ module.exports = async function (fastify, options) {
     if (!isAdmin) {
       if (request.user.id !== id) {
         return reply.status(403).send({ 
-          statusCode: 403,
-          error: 'Forbidden',
-          message: 'You can only update your own profile'
+          status: 'error',
+          message: 'You can only update your own profile',
+          error: 'Forbidden'
         });
       }
       
       // Non-admins can't update these fields
       if (role_id || status) {
         return reply.status(403).send({
-          statusCode: 403,
-          error: 'Forbidden',
-          message: 'You are not authorized to update role or status'
+          status: 'error',
+          message: 'You are not authorized to update role or status',
+          error: 'Forbidden'
         });
       }
     }
@@ -169,13 +217,16 @@ module.exports = async function (fastify, options) {
              status = COALESCE($4, status),
              updated_at = NOW()
          WHERE id = $5
-         RETURNING id, full_name, email, status, created_at, updated_at`,
+         RETURNING id, full_name, email, status, created_at, updated_at, role_id`,
         [full_name, email, role_id, status, id]
       );
 
       if (!updatedUser) {
         await client.query('ROLLBACK');
-        return reply.status(404).send({ message: 'User not found' });
+        return reply.status(404).send({ 
+          status: 'error',
+          message: 'User not found' 
+        });
       }
 
       // Update user regions if provided and user is admin
@@ -221,11 +272,19 @@ module.exports = async function (fastify, options) {
         [id]
       );
 
-      return userWithRegions;
+      return {
+        data: userWithRegions,
+        status: 'success',
+        message: 'User updated successfully'
+      };
     } catch (error) {
       await client.query('ROLLBACK');
       console.error('Update user error:', error);
-      return reply.status(500).send({ message: 'Failed to update user' });
+      return reply.status(500).send({ 
+        status: 'error',
+        message: 'Failed to update user',
+        error: error.message
+      });
     } finally {
       client.release();
     }
@@ -241,26 +300,38 @@ module.exports = async function (fastify, options) {
     try {
       await client.query('BEGIN');
       
-      // First delete from user_regions to avoid foreign key constraint
-      await client.query('DELETE FROM user_regions WHERE user_id = $1', [id]);
-      
-      // Then delete the user
-      const { rowCount } = await client.query(
-        'DELETE FROM users WHERE id = $1',
+      // First get the user before deleting for the response
+      const { rows: [user] } = await client.query(
+        'SELECT id, email FROM users WHERE id = $1',
         [id]
       );
 
-      if (rowCount === 0) {
+      if (!user) {
         await client.query('ROLLBACK');
-        return reply.status(404).send({ message: 'User not found' });
+        return reply.status(404).send({ 
+          status: 'error',
+          message: 'User not found' 
+        });
       }
+      
+      // Delete from user_regions to avoid foreign key constraint
+      await client.query('DELETE FROM user_regions WHERE user_id = $1', [id]);
+      
+      // Then delete the user
+      await client.query('DELETE FROM users WHERE id = $1', [id]);
 
       await client.query('COMMIT');
-      return { message: 'User deleted successfully' };
+      
+      return {
+        data: { id: user.id, email: user.email },
+        status: 'success',
+        message: 'User deleted successfully'
+      };
     } catch (error) {
       await client.query('ROLLBACK');
       console.error('Delete user error:', error);
       return reply.status(500).send({ 
+        status: 'error',
         message: 'Failed to delete user',
         error: error.message 
       });
