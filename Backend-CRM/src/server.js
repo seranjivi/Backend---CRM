@@ -46,6 +46,7 @@ fastify.register(require('./middleware/auth'));
 fastify.register(require('./routes/auth'), { prefix: '/api/auth' });
 fastify.register(require('./routes/users'), { prefix: '/api/users' });
 fastify.register(require('./routes/regions'), { prefix: '/api/regions' });
+fastify.register(require('./routes/roles'), { prefix: '/api/roles' });
 
 // Health check endpoint
 fastify.get('/health', async () => {
