@@ -9,10 +9,18 @@ module.exports = async function (fastify, options) {
   }, async (request, reply) => {
     try {
       const roles = await roleModel.getAll();
-      return { roles };
+      return { 
+        data: roles,
+        status: 'success',
+        message: 'Roles retrieved successfully'
+      };
     } catch (error) {
       console.error('Error fetching roles:', error);
-      return reply.status(500).send({ message: 'Failed to fetch roles' });
+      return reply.status(500).send({ 
+        status: 'error',
+        message: 'Failed to fetch roles',
+        error: error.message 
+      });
     }
   });
 
@@ -23,12 +31,23 @@ module.exports = async function (fastify, options) {
     try {
       const role = await roleModel.getById(request.params.id);
       if (!role) {
-        return reply.status(404).send({ message: 'Role not found' });
+        return reply.status(404).send({ 
+          status: 'error',
+          message: 'Role not found' 
+        });
       }
-      return role;
+      return { 
+        data: role,
+        status: 'success',
+        message: 'Role retrieved successfully'
+      };
     } catch (error) {
       console.error(`Error fetching role with ID ${request.params.id}:`, error);
-      return reply.status(500).send({ message: 'Failed to fetch role' });
+      return reply.status(500).send({ 
+        status: 'error',
+        message: 'Failed to fetch role',
+        error: error.message 
+      });
     }
   });
 };
