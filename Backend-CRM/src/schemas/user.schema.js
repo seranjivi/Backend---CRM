@@ -1,7 +1,7 @@
 exports.createUserSchema = {
   body: {
     type: 'object',
-    required: ['full_name', 'email', 'password'],
+    required: ['full_name', 'email'],
     properties: {
       full_name: { 
         type: 'string',
@@ -14,12 +14,13 @@ exports.createUserSchema = {
       },
       password: {
         type: 'string',
-        minLength: 6
+        minLength: 6,
+        default: 'Admin@123'
       },
       role: {
         type: 'string',
-        enum: ['admin', 'user'],
-        default: 'user'
+        enum: ['Admin', 'User', 'Manager'],
+        default: 'User'
       },
       regions: {
         type: 'array',
