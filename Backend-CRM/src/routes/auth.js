@@ -23,10 +23,6 @@ module.exports = async function (fastify, options) {
          WHERE email = $1`,
         [email]
       );
-      
-      console.log('Login attempt for email:', email);
-      console.log('User found:', rows[0] ? { id: rows[0].id, email: rows[0].email } : 'Not found');
-
       if (rows.length === 0) {
         return reply.status(401).send({
           statusCode: 401,
@@ -37,16 +33,11 @@ module.exports = async function (fastify, options) {
 
       const user = rows[0];
       
-      // Debug log the stored hash and input password
-      console.log('Stored password hash:', user.password_hash);
-      console.log('Input password length:', password.length);
+      // Debug log the stored hash and input passwor
       
       // Use bcrypt to compare passwords
-      const isPasswordValid = await bcrypt.compare(password, user.password_hash);
-      console.log('Password comparison result:', isPasswordValid);
-      
+      const isPasswordValid = await bcrypt.compare(password, user.password_hash);      
       if (!isPasswordValid) {
-        console.log('Password comparison failed');
         return reply.status(401).send({
           statusCode: 401,
           error: 'Unauthorized',
@@ -68,18 +59,12 @@ module.exports = async function (fastify, options) {
         id: user.id,
         email: user.email,
         role_id: user.role_id  // Using role_id instead of role to match the database
-      };
-      
-      console.log('Generating token with payload:', tokenPayload);
-      
+      };      
       const token = jwt.sign(
         tokenPayload,
         process.env.JWT_SECRET || 'your-secret-key',
         { expiresIn: '1d' }
       );
-      
-      console.log('Generated token:', token);
-
       // Prepare user data (exclude sensitive information)
       const { password_hash, ...userData } = user;
       

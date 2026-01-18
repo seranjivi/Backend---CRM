@@ -135,9 +135,6 @@ exports.login = async (fastify, request, reply) => {
        WHERE email = $1`,
       [email]
     );
-    
-    console.log('User found:', user ? { id: user.id, email: user.email } : 'Not found');
-
     if (!user) {
       return reply.status(401).send({
         statusCode: 401,
@@ -147,10 +144,7 @@ exports.login = async (fastify, request, reply) => {
     }
 
     // Check password
-    console.log('Comparing passwords - input:', password, 'stored hash:', user.password_hash);
-    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
-    console.log('Password comparison result:', isPasswordValid);
-    
+    const isPasswordValid = await bcrypt.compare(password, user.password_hash);    
     if (!isPasswordValid) {
       return reply.status(401).send({
         statusCode: 401,

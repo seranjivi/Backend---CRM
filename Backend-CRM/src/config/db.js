@@ -29,10 +29,7 @@ pool.query('SELECT NOW()', (err, res) => {
   if (err) {
     console.error('❌ Database connection error:', err.message);
   } else {
-    console.log('✅ Successfully connected to PostgreSQL database');
-    console.log(`   Host: ${process.env.DB_HOST}`);
-    console.log(`   Database: ${process.env.DB_NAME}`);
-    console.log(`   User: ${process.env.DB_USER}`);
+    console.log('Successfully connected to PostgreSQL database');
   }
 });
 

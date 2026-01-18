@@ -47,6 +47,7 @@ fastify.register(require('./routes/auth'), { prefix: '/api/auth' });
 fastify.register(require('./routes/users'), { prefix: '/api/users' });
 fastify.register(require('./routes/regions'), { prefix: '/api/regions' });
 fastify.register(require('./routes/roles'), { prefix: '/api/roles' });
+fastify.register(require('./routes/opportunities'), { prefix: '/api/opportunities' });
 
 // Health check endpoint
 fastify.get('/health', async () => {
@@ -90,17 +91,6 @@ const start = async () => {
     const host = process.env.HOST || '0.0.0.0';
     
     await fastify.listen({ port, host });
-    
-    console.log('\n========================================');
-    console.log(`🚀 Server is running on http://${host}:${port}`);
-    console.log('📋 Available endpoints:');
-    console.log(`   - POST   /api/auth/login`);
-    console.log(`   - GET    /api/auth/me`);
-    console.log(`   - GET    /api/users`);
-    console.log(`   - POST   /api/users`);
-    console.log(`   - GET    /api/regions`);
-    console.log(`   - GET    /health`);
-    console.log('========================================\n');
     
   } catch (err) {
     console.error('Server error:', err);
