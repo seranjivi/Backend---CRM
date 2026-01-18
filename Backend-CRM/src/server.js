@@ -100,7 +100,7 @@ fastify.get('/', async () => {
 // Start the server
 const start = async () => {
   try {
-    const port = parseInt(process.env.PORT || '5001');
+    const port = parseInt(process.env.PORT || '5000');
     const host = process.env.HOST || '0.0.0.0';
     
     await fastify.listen({ port, host });
