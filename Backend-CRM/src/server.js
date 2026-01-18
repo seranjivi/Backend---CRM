@@ -42,12 +42,25 @@ fastify.register(require('@fastify/postgres'), {
 // Register auth middleware
 fastify.register(require('./middleware/auth'));
 
+// Register multipart plugin for file uploads
+fastify.register(require('@fastify/multipart'), {
+  limits: {
+    fieldNameSize: 100, // Max field name size in bytes
+    fieldSize: 100,     // Max field value size in bytes
+    fields: 10,         // Max number of non-file fields
+    fileSize: 10 * 1024 * 1024, // 10MB per file
+    files: 5,           // Max number of file fields
+    headerPairs: 2000   // Max number of header key=>value pairs
+  }
+});
+
 // Register routes
 fastify.register(require('./routes/auth'), { prefix: '/api/auth' });
 fastify.register(require('./routes/users'), { prefix: '/api/users' });
 fastify.register(require('./routes/regions'), { prefix: '/api/regions' });
 fastify.register(require('./routes/roles'), { prefix: '/api/roles' });
 fastify.register(require('./routes/opportunities'), { prefix: '/api/opportunities' });
+fastify.register(require('./routes/rfp'), { prefix: '/api/rfps' });
 
 // Health check endpoint
 fastify.get('/health', async () => {
@@ -87,7 +100,7 @@ fastify.get('/', async () => {
 // Start the server
 const start = async () => {
   try {
-    const port = parseInt(process.env.PORT || '5000', 10);
+    const port = parseInt(process.env.PORT || '5001');
     const host = process.env.HOST || '0.0.0.0';
     
     await fastify.listen({ port, host });
