@@ -8,10 +8,27 @@ const Region = {
   // Get all regions
   async getAll() {
     try {
-      const result = await pool.query('SELECT * FROM regions ORDER BY name');
+      const result = await pool.query('SELECT * FROM regions WHERE is_active = true ORDER BY name');
       return result.rows;
     } catch (error) {
       console.error('Error fetching regions:', error);
+      throw error;
+    }
+  },
+
+  // Get regions by country ID
+  async getByCountryId(countryId) {
+    try {
+      const query = `
+        SELECT id, name, code, description 
+        FROM regions 
+        WHERE country_id = $1 AND is_active = true 
+        ORDER BY name
+      `;
+      const result = await pool.query(query, [countryId]);
+      return result.rows;
+    } catch (error) {
+      console.error(`Error fetching regions for country ${countryId}:`, error);
       throw error;
     }
   },

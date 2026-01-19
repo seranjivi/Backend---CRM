@@ -1,45 +1,75 @@
 // backend/src/routes/regions.js
-module.exports = async function (fastify, options) {
+const { regionListSchema, regionByCountrySchema } = require('../schemas/region.schema');
+const regionController = require('../controllers/regionController');
+
+async function regionRoutes(fastify, options) {
   // Get all regions
-  fastify.get('/', {
-    preValidation: [fastify.authenticate]
-  }, async (request, reply) => {
-    try {
-      const { rows } = await fastify.pg.query(`
-        SELECT id, name, created_at 
-        FROM regions 
-        ORDER BY name
-      `);
-      return rows;
-    } catch (error) {
-      console.error('Get regions error:', error);
-      return reply.status(500).send({ message: 'Failed to fetch regions' });
-    }
-  });
+  fastify.get('/', 
+    { 
+      schema: regionListSchema,
+      preValidation: [fastify.authenticate] 
+    },
+    regionController.getRegions
+  );
+
+  // Get regions by country ID
+  fastify.get('/country/:countryId', 
+    { 
+      schema: regionByCountrySchema,
+      preValidation: [fastify.authenticate] 
+    },
+    regionController.getRegionsByCountryId
+  );
 
   // Create region (admin only)
   fastify.post('/', {
     preValidation: [fastify.authenticate, fastify.authorize(['admin'])]
   }, async (request, reply) => {
-    const { name } = request.body;
+    const { name, code, description, country_id } = request.body;
 
-    if (!name) {
-      return reply.status(400).send({ message: 'Region name is required' });
+    if (!name || !country_id) {
+      return reply.status(400).send({ 
+        success: false,
+        message: 'Region name and country ID are required' 
+      });
     }
 
     try {
       const { rows } = await fastify.pg.query(
-        'INSERT INTO regions (name) VALUES ($1) RETURNING *',
-        [name]
+        `INSERT INTO regions (name, code, description, country_id) 
+         VALUES ($1, $2, $3, $4) 
+         RETURNING *`,
+        [name, code, description, country_id]
       );
       
-      return reply.code(201).send(rows[0]);
+      return reply.code(201).send({
+        success: true,
+        data: rows[0]
+      });
     } catch (error) {
-      if (error.code === '23505') { // Unique violation
-        return reply.status(400).send({ message: 'Region already exists' });
-      }
       console.error('Create region error:', error);
-      return reply.status(500).send({ message: 'Failed to create region' });
+      
+      if (error.code === '23505') { // Unique violation
+        return reply.status(400).send({ 
+          success: false,
+          message: 'Region with this name already exists for the specified country' 
+        });
+      }
+      
+      if (error.code === '23503') { // Foreign key violation
+        return reply.status(400).send({ 
+          success: false,
+          message: 'Invalid country ID' 
+        });
+      }
+      
+      return reply.status(500).send({ 
+        success: false,
+        message: 'Failed to create region',
+        error: error.message 
+      });
     }
   });
 };
+
+module.exports = regionRoutes;
