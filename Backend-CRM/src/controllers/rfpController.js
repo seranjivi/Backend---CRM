@@ -2,6 +2,20 @@ const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs').promises;
 
+// Update opportunity's approval stage
+const updateOpportunityApprovalStage = async (client, opportunityId, stage) => {
+  try {
+    await client.query(
+      'UPDATE opportunities SET approval_stage = $1 WHERE id = $2',
+      [stage, opportunityId]
+    );
+    console.log(`Updated opportunity ${opportunityId} approval stage to ${stage}`);
+  } catch (error) {
+    console.error('Error updating opportunity approval stage:', error);
+    throw error;
+  }
+};
+
 // Ensure uploads directory exists
 const ensureUploadsDir = async () => {
   const uploadsDir = path.join(__dirname, '../../uploads');
@@ -87,9 +101,14 @@ const createRFP = async (fastify, request, reply) => {
         fields.submissionMode,
         fields.portalUrl,
         request.user?.id,
-        fields.opportunityId  // Add opportunityId to the query
+        fields.opportunityId
       ]
     );
+
+    // If status is 'Submitted', update opportunity approval stage to LEVEL_2_SOW
+    if (fields.status === 'Submitted' && fields.opportunityId) {
+      await updateOpportunityApprovalStage(client, fields.opportunityId, 'LEVEL_2_SOW');
+    }
 
     const rfp = rfpResult.rows[0];
 
