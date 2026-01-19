@@ -17,12 +17,12 @@ const createRFP = async (fastify, request, reply) => {
   let client;
   let fields = { 
     title: null,
-    status: 'draft',
+    status: null, // Status will be set from request or default to 'draft' in query
     submissionDeadline: null,
     bidManager: null,
     submissionMode: null,
     portalUrl: null,
-    opportunityId: null // Add opportunityId field
+    opportunityId: null
   };
   const files = [];
   
@@ -53,8 +53,12 @@ const createRFP = async (fastify, request, reply) => {
         }
       }
     } else {
-      // Handle JSON body
-      fields = { ...fields, ...request.body };
+      // Handle JSON body and map rfpStatus to status
+      fields = { 
+        ...fields, 
+        ...request.body,
+        status: request.body.rfpStatus || request.body.status // Map rfpStatus to status
+      };
     }
 
     // Validate required fields including opportunityId
@@ -73,11 +77,11 @@ const createRFP = async (fastify, request, reply) => {
         portal_url,
         created_by,
         opportunity_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+      ) VALUES ($1, COALESCE($2, 'draft'), $3, $4, $5, $6, $7, $8) 
       RETURNING id, title, status, submission_deadline, created_at, opportunity_id`,
       [
         fields.title,
-        fields.status || 'draft',
+        fields.status,
         fields.submissionDeadline ? new Date(fields.submissionDeadline) : null,
         fields.bidManager,
         fields.submissionMode,
