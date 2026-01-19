@@ -27,6 +27,7 @@ const pool = new Pool({
 // Test the database connection
 pool.query('SELECT NOW()', (err, res) => {
   if (err) {
+    
     console.error('❌ Database connection error:', err.message);
   } else {
     console.log('Successfully connected to PostgreSQL database');
@@ -39,7 +40,19 @@ pool.on('error', (err) => {
   process.exit(-1);
 });
 
+// Function to get a client from the pool
+const getClient = async () => {
+  const client = await pool.connect();
+  return client;
+};
+
+// Export the pool and query function for simple queries
+const query = (text, params) => pool.query(text, params);
+
 module.exports = {
+  query,
+  getClient,
+  pool,
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { 
     rejectUnauthorized: false 

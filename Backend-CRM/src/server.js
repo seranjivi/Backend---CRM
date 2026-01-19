@@ -61,6 +61,8 @@ fastify.register(require('./routes/regions'), { prefix: '/api/regions' });
 fastify.register(require('./routes/roles'), { prefix: '/api/roles' });
 fastify.register(require('./routes/opportunities'), { prefix: '/api/opportunities' });
 fastify.register(require('./routes/rfp'), { prefix: '/api/rfps' });
+fastify.register(require('./routes/client'), { prefix: '/api/client' });  // Add this line
+fastify.register(require('./routes/sow'), { prefix: '/api/sows' });
 
 // Health check endpoint
 fastify.get('/health', async () => {
