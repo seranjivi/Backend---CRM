@@ -110,29 +110,28 @@ const Opportunity = (fastify) => ({
 
       // First insert the opportunity
       const query = {
-        text: `
-          INSERT INTO opportunities (
-            opportunity_name, client_name, close_date, amount_currency, amount,
-            opportunity_type, lead_source, triaged_status, pipeline_status,
-            win_probability, user_id, role_id
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) 
-          RETURNING *
-        `,
-        values: [
-          opportunity_name,
-          client_name,
-          close_date,
-          amount_currency,
-          amount,
-          opportunity_type,
-          lead_source,
-          triaged_status,
-          pipeline_status,
-          win_probability,
-          user_id,
-          role_id
-        ]
-      };
+  text: `
+    INSERT INTO opportunities (
+      opportunity_name, client_name, close_date, amount_currency, amount,
+      opportunity_type, lead_source, triaged_status, pipeline_status,
+      win_probability, user_id, role_id, approval_stage
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'LEVEL_1_RFB') 
+    RETURNING *
+  `,
+  values: [
+    opportunity_name,
+    client_name,
+    close_date,
+    amount_currency,
+    amount,
+    opportunity_type,
+    lead_source,
+    triaged_status,
+    pipeline_status,
+    win_probability,
+    user_id,
+    role_id
+  ]};
 
       const insertResult = await client.query(query);
 

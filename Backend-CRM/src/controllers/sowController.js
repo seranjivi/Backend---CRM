@@ -1,350 +1,326 @@
-const { query, getClient } = require('../config/db');
+// src/controllers/sowController.js
+const { getClient } = require('../config/db');
+const { v4: uuidv4 } = require('uuid');
+const path = require('path');
+const fs = require('fs').promises;
+
+const ensureUploadsDir = async () => {
+  const uploadsDir = path.join(__dirname, '../../uploads/sow-documents');
+  try {
+    await fs.mkdir(uploadsDir, { recursive: true });
+  } catch (err) {
+    if (err.code !== 'EEXIST') throw err;
+  }
+  return uploadsDir;
+};
 
 const createSOW = async (request, reply) => {
-    const {
-        opportunity_id,
-        rfb_id,
-        user_id,
-        sow_title,
-        release_version,
-        contract_currency = 'USD',
-        contract_value = 0,
-        target_kickoff_date,
-        linked_proposal_reference,
-        scope_overview
-    } = request.body;
-
     const client = await getClient();
+    let sowResult;
 
     try {
         await client.query('BEGIN');
+        const uploadsDir = await ensureUploadsDir();
+        const parts = request.parts();
+        const files = [];
+        let fields = {
+            sow_title: null,
+            opportunity_id: null,
+            rfb_id: null,
+            user_id: null,
+            release_version: null,
+            contract_currency: 'USD',
+            contract_value: 0,
+            target_kickoff_date: null,
+            linked_proposal_reference: null,
+            scope_overview: null
+        };
 
-        // Create SOW - Removed client_id from the query
-        const insertQuery = `
+        // Process multipart form data
+        for await (const part of parts) {
+            if (part.file) {
+                // Handle file upload
+                const filename = `${uuidv4()}${path.extname(part.filename)}`;
+                const filepath = path.join(uploadsDir, filename);
+                
+                await fs.writeFile(filepath, await part.toBuffer());
+                
+                files.push({
+                    original_filename: part.filename,
+                    stored_filename: filename,
+                    mime_type: part.mimetype,
+                    size: part.file.bytesRead
+                });
+            } else {
+                // Handle form fields
+                fields[part.fieldname] = part.value;
+            }
+        }
+
+        // Validate required fields
+        const requiredFields = ['sow_title', 'opportunity_id', 'rfb_id', 'user_id'];
+        const missingFields = requiredFields.filter(field => !fields[field]);
+        
+        if (missingFields.length > 0) {
+            throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
+        }
+
+        // Create SOW
+        const insertSOWQuery = `
             INSERT INTO sows (
                 opportunity_id, rfb_id, user_id,
                 sow_title, release_version, contract_currency,
                 contract_value, target_kickoff_date,
                 linked_proposal_reference, scope_overview
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            RETURNING *
+            RETURNING sow_id, sow_title, opportunity_id, rfb_id, user_id, created_at
         `;
 
-        const values = [
-            opportunity_id,
-            rfb_id,
-            user_id,
-            sow_title,
-            release_version,
-            contract_currency,
-            contract_value,
-            target_kickoff_date,
-            linked_proposal_reference,
-            scope_overview
+        const sowValues = [
+            fields.opportunity_id,
+            fields.rfb_id,
+            fields.user_id,
+            fields.sow_title,
+            fields.release_version,
+            fields.contract_currency,
+            fields.contract_value,
+            fields.target_kickoff_date,
+            fields.linked_proposal_reference,
+            fields.scope_overview
         ];
 
-        const result = await client.query(insertQuery, values);
+        console.log('Creating SOW with values:', {
+            opportunity_id: fields.opportunity_id,
+            rfb_id: fields.rfb_id,
+            user_id: fields.user_id,
+            sow_title: fields.sow_title,
+            contract_currency: fields.contract_currency,
+            contract_value: fields.contract_value
+        });
+
+        console.log('Executing SOW insert with values:', sowValues);
+        const result = await client.query(insertSOWQuery, sowValues);
         
+        if (!result.rows || result.rows.length === 0) {
+            throw new Error('No rows returned from SOW creation');
+        }
+        
+        sowResult = result.rows[0];
+        console.log('SOW created successfully. Result:', sowResult);
+        
+        // Use sow_id instead of id
+        if (!sowResult || !sowResult.sow_id) {
+            throw new Error('No valid sow_id returned after SOW creation');
+        }
+        
+        // Insert document records if files were uploaded
+        if (files.length > 0) {
+            for (const file of files) {
+                await client.query(
+                    `INSERT INTO sow_documents (
+                        sow_id,
+                        original_filename,
+                        stored_filename,
+                        mime_type,
+                        size,
+                        uploaded_by
+                    ) VALUES ($1, $2, $3, $4, $5, $6)`,
+                    [
+                        sowResult.sow_id,
+                        file.original_filename,
+                        file.stored_filename,
+                        file.mime_type,
+                        file.size,
+                        fields.user_id
+                    ]
+                );
+            }
+        }
+
         await client.query('COMMIT');
         
+        // Get the created SOW with its documents
+        const { rows } = await client.query(`
+            SELECT s.*, 
+                   (SELECT json_agg(json_build_object(
+                       'id', d.id,
+                       'original_filename', d.original_filename,
+                       'mime_type', d.mime_type,
+                       'size', d.size,
+                       'created_at', d.created_at
+                   )) FILTER (WHERE d.id IS NOT NULL) 
+                   FROM sow_documents d 
+                   WHERE d.sow_id = s.sow_id) as documents
+            FROM sows s
+            WHERE s.sow_id = $1
+        `, [sowResult.sow_id]);
+        
+        const createdSOW = rows[0];
+        if (!createdSOW) {
+            throw new Error('Failed to retrieve created SOW');
+        }
+
         reply.status(201).send({
             success: true,
-            data: result.rows[0]
+            message: 'SOW created successfully',
+            data: createdSOW
         });
+
     } catch (error) {
-        await client.query('ROLLBACK');
-        console.error('Error creating SOW:', error);
-        reply.status(500).send({
-            success: false,
-            message: 'Error creating SOW',
-            error: error.message
+        await client.query('ROLLBACK').catch(rollbackError => {
+            console.error('Error rolling back transaction:', rollbackError);
         });
+        
+        console.error('Error in createSOW:', error);
+        
+        if (!reply.sent) {
+            reply.status(500).send({
+                success: false,
+                error: 'Failed to create SOW',
+                message: error.message
+            });
+        }
     } finally {
-        client.release();
-    }
-};
-
-const getSOWById = async (request, reply) => {
-    try {
-        const { id } = request.params;
-        
-        const queryText = `
-            SELECT 
-                s.*,
-                c.client_name,
-                o.opportunity_name,
-                r.rfp_title,
-                u.full_name as created_by_name
-            FROM sows s
-            JOIN clients c ON s.client_id = c.client_id
-            JOIN opportunities o ON s.opportunity_id = o.id
-            JOIN rfps r ON s.rfb_id = r.id
-            JOIN users u ON s.user_id = u.id
-            WHERE s.sow_id = $1
-        `;
-        
-        const result = await query(queryText, [id]);
-        
-        if (result.rows.length === 0) {
-            return reply.status(404).send({
-                success: false,
-                message: 'SOW not found'
-            });
+        try {
+            client.release();
+        } catch (releaseError) {
+            console.error('Error releasing client:', releaseError);
         }
-        
-        reply.send({
-            success: true,
-            data: result.rows[0]
-        });
-    } catch (error) {
-        console.error('Error fetching SOW:', error);
-        reply.status(500).send({
-            success: false,
-            message: 'Error fetching SOW',
-            error: error.message
-        });
-    }
-};
-
-const getSOWsByOpportunity = async (request, reply) => {
-    try {
-        const { opportunityId } = request.params;
-        
-        const queryText = `
-            SELECT 
-                s.*,
-                c.client_name,
-                o.opportunity_name,
-                r.rfp_title,
-                u.full_name as created_by_name
-            FROM sows s
-            JOIN clients c ON s.client_id = c.client_id
-            JOIN opportunities o ON s.opportunity_id = o.id
-            JOIN rfps r ON s.rfb_id = r.id
-            JOIN users u ON s.user_id = u.id
-            WHERE s.opportunity_id = $1
-            ORDER BY s.created_at DESC
-        `;
-        
-        const result = await query(queryText, [opportunityId]);
-        
-        reply.send({
-            success: true,
-            data: result.rows
-        });
-    } catch (error) {
-        console.error('Error fetching SOWs:', error);
-        reply.status(500).send({
-            success: false,
-            message: 'Error fetching SOWs',
-            error: error.message
-        });
-    }
-};
-
-const updateSOW = async (request, reply) => {
-    const { id } = request.params;
-    const {
-        sow_title,
-        release_version,
-        contract_currency,
-        contract_value,
-        target_kickoff_date,
-        linked_proposal_reference,
-        scope_overview,
-        sow_status
-    } = request.body;
-
-    const client = await getClient();
-
-    try {
-        await client.query('BEGIN');
-
-        // Check if SOW exists
-        const checkQuery = `
-            SELECT sow_status 
-            FROM sows 
-            WHERE sow_id = $1 
-            FOR UPDATE
-        `;
-        const checkResult = await client.query(checkQuery, [id]);
-        
-        if (checkResult.rows.length === 0) {
-            return reply.status(404).send({
-                success: false,
-                message: 'SOW not found'
-            });
-        }
-
-        // Update SOW
-        const updateQuery = `
-            UPDATE sows
-            SET 
-                sow_title = COALESCE($1, sow_title),
-                release_version = COALESCE($2, release_version),
-                contract_currency = COALESCE($3, contract_currency),
-                contract_value = COALESCE($4, contract_value),
-                target_kickoff_date = COALESCE($5, target_kickoff_date),
-                linked_proposal_reference = COALESCE($6, linked_proposal_reference),
-                scope_overview = COALESCE($7, scope_overview),
-                sow_status = COALESCE($8, sow_status),
-                updated_at = CURRENT_TIMESTAMP
-            WHERE sow_id = $9
-            RETURNING *
-        `;
-
-        const values = [
-            sow_title,
-            release_version,
-            contract_currency,
-            contract_value,
-            target_kickoff_date,
-            linked_proposal_reference,
-            scope_overview,
-            sow_status,
-            id
-        ];
-
-        const result = await client.query(updateQuery, values);
-        
-        if (result.rows.length === 0) {
-            return reply.status(404).send({
-                success: false,
-                message: 'SOW not found'
-            });
-        }
-        
-        await client.query('COMMIT');
-        
-        reply.send({
-            success: true,
-            data: result.rows[0]
-        });
-    } catch (error) {
-        await client.query('ROLLBACK');
-        console.error('Error updating SOW:', error);
-        reply.status(500).send({
-            success: false,
-            message: 'Error updating SOW',
-            error: error.message
-        });
-    } finally {
-        client.release();
     }
 };
 
 const listSOWs = async (request, reply) => {
+    const client = await getClient();
+    
     try {
-        const { 
-            page = 1, 
-            limit = 10, 
-            sortBy = 'created_at', 
-            sortOrder = 'desc',
-            status,
+        // Get query parameters with defaults
+        const {
+            page = 1,
+            limit = 10,
+            sortBy = 'created_at',
+            sortOrder = 'DESC',
             opportunity_id,
             rfb_id,
             user_id,
             search
         } = request.query;
 
+        // Calculate offset for pagination
         const offset = (page - 1) * limit;
 
-        // Build the WHERE clause
-        const whereConditions = [];
-        const queryParams = [];
-        let paramIndex = 1;
-
-        if (status) {
-            whereConditions.push(`s.sow_status = $${paramIndex++}`);
-            queryParams.push(status);
-        }
-
-        if (opportunity_id) {
-            whereConditions.push(`s.opportunity_id = $${paramIndex++}`);
-            queryParams.push(opportunity_id);
-        }
-
-        if (rfb_id) {
-            whereConditions.push(`s.rfb_id = $${paramIndex++}`);
-            queryParams.push(rfb_id);
-        }
-
-        if (user_id) {
-            whereConditions.push(`s.user_id = $${paramIndex++}`);
-            queryParams.push(user_id);
-        }
-
-        if (search) {
-            whereConditions.push(`
-                (s.sow_title ILIKE $${paramIndex} OR 
-                 s.scope_overview ILIKE $${paramIndex} OR
-                 o.opportunity_name ILIKE $${paramIndex})
-            `);
-            queryParams.push(`%${search}%`);
-        }
-
-        const whereClause = whereConditions.length > 0 
-            ? `WHERE ${whereConditions.join(' AND ')}` 
-            : '';
-
-        // Get total count for pagination
-        const countQuery = `
-            SELECT COUNT(*) 
+        // Start building the query
+        let query = `
+            SELECT 
+                s.*,
+                (SELECT json_agg(json_build_object(
+                    'id', d.id,
+                    'original_filename', d.original_filename,
+                    'mime_type', d.mime_type,
+                    'size', d.size,
+                    'created_at', d.created_at
+                )) FILTER (WHERE d.id IS NOT NULL) 
+                FROM sow_documents d 
+                WHERE d.sow_id = s.sow_id) as documents
             FROM sows s
-            LEFT JOIN opportunities o ON s.opportunity_id = o.id
-            ${whereClause}
+            WHERE 1=1
         `;
 
-        const countResult = await query(countQuery, queryParams);
+        const queryParams = [];
+        let paramCount = 1;
+
+        // Add filters
+        if (opportunity_id) {
+            query += ` AND s.opportunity_id = $${paramCount++}`;
+            queryParams.push(opportunity_id);
+        }
+        if (rfb_id) {
+            query += ` AND s.rfb_id = $${paramCount++}`;
+            queryParams.push(rfb_id);
+        }
+        if (user_id) {
+            query += ` AND s.user_id = $${paramCount++}`;
+            queryParams.push(user_id);
+        }
+        if (search) {
+            query += ` AND (s.sow_title ILIKE $${paramCount} OR s.scope_overview ILIKE $${paramCount})`;
+            queryParams.push(`%${search}%`);
+            paramCount++;
+        }
+
+        // Add sorting
+        const validSortColumns = ['sow_id', 'sow_title', 'created_at', 'contract_value', 'opportunity_id', 'rfb_id'];
+        const sortColumn = validSortColumns.includes(sortBy) ? sortBy : 'created_at';
+        const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+        
+        query += ` ORDER BY ${sortColumn} ${order}`;
+
+        // Add pagination
+        query += ` LIMIT $${paramCount++} OFFSET $${paramCount++}`;
+        queryParams.push(limit, offset);
+
+        // Execute the query
+        const { rows } = await client.query(query, queryParams);
+
+        // Get total count for pagination
+        let countQuery = 'SELECT COUNT(*) FROM sows s WHERE 1=1';
+        const countParams = [];
+        paramCount = 1;
+
+        if (opportunity_id) {
+            countQuery += ` AND s.opportunity_id = $${paramCount++}`;
+            countParams.push(opportunity_id);
+        }
+        if (rfb_id) {
+            countQuery += ` AND s.rfb_id = $${paramCount++}`;
+            countParams.push(rfb_id);
+        }
+        if (user_id) {
+            countQuery += ` AND s.user_id = $${paramCount++}`;
+            countParams.push(user_id);
+        }
+        if (search) {
+            countQuery += ` AND (s.sow_title ILIKE $${paramCount} OR s.scope_overview ILIKE $${paramCount})`;
+            countParams.push(`%${search}%`);
+        }
+
+        const countResult = await client.query(countQuery, countParams);
         const total = parseInt(countResult.rows[0].count, 10);
         const totalPages = Math.ceil(total / limit);
 
-        // Get paginated results
-        const queryText = `
-            SELECT 
-                s.*,
-                o.opportunity_name,
-                r.title,
-                u.full_name as created_by_name
-            FROM sows s
-            LEFT JOIN opportunities o ON s.opportunity_id = o.id
-            LEFT JOIN rfps r ON s.rfb_id = r.id
-            LEFT JOIN users u ON s.user_id = u.id
-            ${whereClause}
-            ORDER BY s.${sortBy} ${sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC'}
-            LIMIT $${paramIndex++} OFFSET $${paramIndex}
-        `;
-
-        const result = await query(
-            queryText, 
-            [...queryParams, limit, offset]
-        );
-
-        reply.send({
+        // Return the response
+        return {
             success: true,
-            data: result.rows,
+            data: rows,
             pagination: {
                 total,
                 totalPages,
                 currentPage: page,
-                pageSize: limit,
+                itemsPerPage: limit,
                 hasNextPage: page < totalPages,
                 hasPreviousPage: page > 1
             }
-        });
+        };
+
     } catch (error) {
         console.error('Error listing SOWs:', error);
         reply.status(500).send({
             success: false,
-            message: 'Error listing SOWs',
-            error: error.message
+            error: 'Failed to list SOWs',
+            message: error.message
         });
+    } finally {
+        try {
+            client.release();
+        } catch (releaseError) {
+            console.error('Error releasing client:', releaseError);
+        }
     }
 };
+
+// Update the exports at the bottom of the file
 module.exports = {
     createSOW,
-    getSOWById,
-    getSOWsByOpportunity,
-    updateSOW,
     listSOWs
+    // getSOWsByOpportunity,
+    // updateSOW
 };
