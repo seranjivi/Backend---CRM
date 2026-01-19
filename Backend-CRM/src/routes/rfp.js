@@ -1,4 +1,4 @@
-const { createRFP, getAllRFPs } = require('../controllers/rfpController');
+const { createRFP, getAllRFPs, getRFPByOpportunityId } = require('../controllers/rfpController');
 
 module.exports = async function (fastify, options) {
   // Get all RFPs
@@ -22,6 +22,23 @@ module.exports = async function (fastify, options) {
     },
     handler: async (request, reply) => {
       return createRFP(fastify, request, reply);
+    }
+  });
+  
+  // Get RFP by opportunity ID
+  fastify.get('/by-opportunity/:opportunityId', {
+    preValidation: [fastify.authenticate],
+    schema: {
+      params: {
+        type: 'object',
+        properties: {
+          opportunityId: { type: 'integer' }
+        },
+        required: ['opportunityId']
+      }
+    },
+    handler: async (request, reply) => {
+      return getRFPByOpportunityId(fastify, request, reply);
     }
   });
 };

@@ -16,6 +16,77 @@ const updateOpportunityApprovalStage = async (client, opportunityId, stage) => {
   }
 };
 
+const getRFPByOpportunityId = async (fastify, request, reply) => {
+  let client;
+  try {
+    const { opportunityId } = request.params;
+    client = await fastify.pg.connect();
+    
+    // Get RFP details
+    const rfpQuery = `
+      SELECT 
+        r.id,
+        r.title as "rfpTitle",
+        r.status as "rfpStatus",
+        r.submission_deadline as "submissionDeadline",
+        r.bid_manager as "bidManager",
+        r.submission_mode as "submissionMode",
+        r.portal_url as "portalUrl",
+        r.created_at as "createdOn",
+        r.opportunity_id as "opportunityId",
+        o.opportunity_name as "opportunityName",
+        u.full_name as "createdBy"
+      FROM rfps r
+      LEFT JOIN opportunities o ON r.opportunity_id = o.id
+      LEFT JOIN users u ON r.created_by = u.id
+      WHERE r.opportunity_id = $1
+      ORDER BY r.created_at DESC
+      LIMIT 1
+    `;
+    
+    const rfpResult = await client.query(rfpQuery, [opportunityId]);
+    
+    if (rfpResult.rows.length === 0) {
+      return reply.status(404).send({
+        success: false,
+        error: 'Not Found',
+        message: 'No RFP found for this opportunity'
+      });
+    }
+    const rfp = rfpResult.rows[0];
+    // Get associated documents
+    const documentsResult = await client.query(
+      `SELECT 
+        id, 
+        original_filename as "originalFilename",
+        stored_filename as "storedFilename",
+        mime_type as "mimeType",
+        size,
+        created_at as "createdAt"
+       FROM rfp_documents 
+       WHERE rfp_id = $1
+       ORDER BY created_at DESC`,
+      [rfp.id]
+    );
+    return {
+      success: true,
+      data: {
+        ...rfp,
+        documents: documentsResult.rows
+      }
+    };
+  } catch (error) {
+    console.error('Error fetching RFP by opportunity ID:', error);
+    reply.status(500).send({ 
+      success: false, 
+      error: 'Failed to fetch RFP',
+      message: error.message 
+    });
+  } finally {
+    if (client) client.release();
+  }
+};
+
 // Ensure uploads directory exists
 const ensureUploadsDir = async () => {
   const uploadsDir = path.join(__dirname, '../../uploads');
@@ -266,5 +337,7 @@ const handleRFPError = (error, request, reply) => {
 module.exports = {
   createRFP,
   getAllRFPs,
-  handleRFPError
+  handleRFPError,
+  getRFPByOpportunityId, 
+
 };
