@@ -58,15 +58,27 @@ module.exports = async function (fastify, options) {
       const tokenPayload = {
         id: user.id,
         email: user.email,
-        role_id: user.role_id  // Using role_id instead of role to match the database
+        role_id: user.role_id  
       };      
       const token = jwt.sign(
         tokenPayload,
         process.env.JWT_SECRET || 'your-secret-key',
         { expiresIn: '1d' }
       );
-      // Prepare user data (exclude sensitive information)
-      const { password_hash, ...userData } = user;
+      // Get role and permissions
+      const { rows: [role] } = await fastify.pg.query(
+        `SELECT r.name, r.permissions 
+         FROM roles r 
+         WHERE r.id = $1`,
+        [user.role_id]
+      );
+
+      // Prepare user data with role and permissions
+      const { password_hash, ...userData } = {
+        ...user,
+        role: role?.name,
+        permissions: role?.permissions || {}
+      };
       
       return {
         statusCode: 200,

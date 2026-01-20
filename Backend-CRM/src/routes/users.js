@@ -119,17 +119,18 @@ module.exports = async function (fastify, options) {
   }, async (request, reply) => {
     try {
       const user = await register(fastify, request, reply);
-      return {
+      return reply.status(201).send({
         data: user,
         status: 'success',
         message: 'User created successfully'
-      };
+      });
     } catch (error) {
       console.error('Create user error:', error);
-      return reply.status(500).send({ 
+      const statusCode = error.statusCode || 500;
+      return reply.status(statusCode).send({ 
         status: 'error',
-        message: 'Failed to create user',
-        error: error.message
+        message: error.message || 'Failed to create user',
+        ...(process.env.NODE_ENV === 'development' && { error: error.stack })
       });
     }
   });

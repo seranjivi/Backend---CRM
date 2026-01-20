@@ -16,8 +16,8 @@ const generateToken = (fastify, user) => {
 };
 
 // Register a new user
-exports.register = async (fastify, request, reply) => {
-  const { full_name: fullName, email, role: roleName = 'user', status = 'active', regionIds = [] } = request.body;
+exports.register = async (fastify, request) => {
+  const { full_name: fullName, email, role: roleName = 'User', status = 'active', regionIds = [] } = request.body;
   const password = 'Admin@123'; // Auto-generate default password
   
   // Validate required fields
@@ -37,11 +37,11 @@ exports.register = async (fastify, request, reply) => {
     );
 
     if (existingUser) {
-      return reply.status(400).send({ 
+      throw { 
         statusCode: 400,
         error: 'Bad Request',
         message: 'Email already in use'
-      });
+      };
     }
 
     // Get role ID from role name
@@ -51,11 +51,11 @@ exports.register = async (fastify, request, reply) => {
     );
 
     if (!role) {
-      return reply.status(400).send({
+      throw {
         statusCode: 400,
         error: 'Bad Request',
         message: 'Invalid role specified. Valid roles are: admin, user, etc.'
-      });
+      };
     }
 
     // Hash the password
@@ -67,11 +67,23 @@ exports.register = async (fastify, request, reply) => {
     try {
       await client.query('BEGIN');
       
-      // Insert user
+      // Insert user and get role name in the same query
       const { rows: [user] } = await client.query(
-        `INSERT INTO users (full_name, email, password_hash, role_id, status)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, full_name, email, role_id as role, status, created_at`,
+        `WITH new_user AS (
+          INSERT INTO users (full_name, email, password_hash, role_id, status)
+          VALUES ($1, $2, $3, $4, $5)
+          RETURNING id, full_name, email, role_id, status, created_at
+        )
+        SELECT 
+          u.id, 
+          u.full_name, 
+          u.email, 
+          u.role_id,
+          r.name as role,
+          u.status, 
+          u.created_at
+        FROM new_user u
+        JOIN roles r ON u.role_id = r.id`,
         [fullName, email, hashedPassword, role.id, status]
       );
 
@@ -91,22 +103,20 @@ exports.register = async (fastify, request, reply) => {
       
       // Generate token
       const token = generateToken(fastify, { 
-        id: user.id, 
-        email: user.email, 
-        role_id: user.role_id 
+        id: user.id,
+        email: user.email,
+        role_id: user.role_id
       });
 
-      // Remove sensitive data from response
-      const { password_hash, ...userWithoutPassword } = user;
-      
-      return reply.status(201).send({
-        statusCode: 201,
-        message: 'User registered successfully',
-        user: userWithoutPassword,
+      // Return the user data with role from the query
+      return {
+        ...user,
+        role: user.role ,  // Role comes from the query
+        role_id: user.role_id,      // Role ID from the query
         token,
         temporaryPassword: 'Admin@123',
         note: 'Please change the default password on first login.'
-      });
+      };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -115,11 +125,7 @@ exports.register = async (fastify, request, reply) => {
     }
   } catch (error) {
     console.error('Registration error:', error);
-    return reply.status(500).send({ 
-      statusCode: 500,
-      error: 'Internal Server Error',
-      message: 'Failed to register user'
-    });
+    throw error;  // Throw the error to be handled by the route
   }
 };
 
