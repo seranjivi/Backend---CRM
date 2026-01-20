@@ -13,7 +13,7 @@ async function sowRoutes(fastify, options) {
         preValidation: [fastify.authenticate],
         config: {
             payload: {
-                maxFields: 100,
+                maxFields: 1000, // Increased from 100 to 1000
                 maxFileSize: 10 * 1024 * 1024, // 10MB
                 maxFiles: 5,
                 allow: 'multipart/form-data'

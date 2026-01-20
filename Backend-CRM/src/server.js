@@ -45,12 +45,13 @@ fastify.register(require('./middleware/auth'));
 // Register multipart plugin for file uploads
 fastify.register(require('@fastify/multipart'), {
   limits: {
-    fieldNameSize: 100, // Max field name size in bytes
-    fieldSize: 100,     // Max field value size in bytes
-    fields: 10,         // Max number of non-file fields
-    fileSize: 10 * 1024 * 1024, // 10MB per file
-    files: 5,           // Max number of file fields
-    headerPairs: 2000   // Max number of header key=>value pairs
+    fieldNameSize: 1000,     // Max field name size in bytes
+    fieldSize: 1024 * 1024,  // 1MB max field value size
+    fields: 1000,            // Max number of non-file fields
+    fileSize: 50 * 1024 * 1024, // 50MB max file size
+    files: 10,               // Max number of file fields
+    headerPairs: 5000,       // Max number of header key=>value pairs
+    parts: 1010              // Max number of parts (fields + files)
   }
 });
 

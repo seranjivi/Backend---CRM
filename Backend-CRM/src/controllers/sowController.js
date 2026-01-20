@@ -28,6 +28,7 @@ const createSOW = async (request, reply) => {
             opportunity_id: null,
             rfb_id: null,
             user_id: null,
+            status: '', 
             release_version: null,
             contract_currency: 'USD',
             contract_value: 0,
@@ -53,9 +54,13 @@ const createSOW = async (request, reply) => {
                 });
             } else {
                 // Handle form fields
+                console.log(`Processing field: ${part.fieldname} = ${part.value}`);
                 fields[part.fieldname] = part.value;
             }
         }
+
+        // Debug: Log all fields after processing
+        console.log('Fields after processing:', JSON.stringify(fields, null, 2));
 
         // Validate required fields
         const requiredFields = ['sow_title', 'opportunity_id', 'rfb_id', 'user_id'];
@@ -68,25 +73,40 @@ const createSOW = async (request, reply) => {
         // Create SOW
         const insertSOWQuery = `
             INSERT INTO sows (
-                opportunity_id, rfb_id, user_id,
-                sow_title, release_version, contract_currency,
-                contract_value, target_kickoff_date,
-                linked_proposal_reference, scope_overview
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            RETURNING sow_id, sow_title, opportunity_id, rfb_id, user_id, created_at
-        `;
+            sow_title, 
+            opportunity_id, 
+            rfb_id, 
+            user_id,
+            status,
+            release_version, 
+            contract_currency,
+            contract_value, 
+            target_kickoff_date,
+            linked_proposal_reference, 
+            scope_overview
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        RETURNING 
+            sow_id, 
+            sow_title, 
+            status,
+            opportunity_id, 
+            rfb_id, 
+            user_id,
+            created_at
+    `
 
         const sowValues = [
-            fields.opportunity_id,
-            fields.rfb_id,
-            fields.user_id,
-            fields.sow_title,
-            fields.release_version,
-            fields.contract_currency,
-            fields.contract_value,
-            fields.target_kickoff_date,
-            fields.linked_proposal_reference,
-            fields.scope_overview
+            fields.sow_title,             // $1
+            fields.opportunity_id,        // $2
+            fields.rfb_id,                // $3
+            fields.user_id,               // $4
+            fields.status,                // $5
+            fields.release_version,       // $6
+            fields.contract_currency,     // $7
+            fields.contract_value,        // $8
+            fields.target_kickoff_date,   // $9
+            fields.linked_proposal_reference,  // $10
+            fields.scope_overview         // $11
         ];
 
         console.log('Creating SOW with values:', {
@@ -98,7 +118,7 @@ const createSOW = async (request, reply) => {
             contract_value: fields.contract_value
         });
 
-        console.log('Executing SOW insert with values:', sowValues);
+        console.log('Executing SOW insert with values:', JSON.stringify(sowValues, null, 2));
         const result = await client.query(insertSOWQuery, sowValues);
         
         if (!result.rows || result.rows.length === 0) {
@@ -212,6 +232,7 @@ const listSOWs = async (request, reply) => {
         let query = `
             SELECT 
                 s.*,
+                o.client_name,
                 (SELECT json_agg(json_build_object(
                     'id', d.id,
                     'original_filename', d.original_filename,
@@ -222,6 +243,7 @@ const listSOWs = async (request, reply) => {
                 FROM sow_documents d 
                 WHERE d.sow_id = s.sow_id) as documents
             FROM sows s
+            LEFT JOIN opportunities o ON s.opportunity_id = o.id
             WHERE 1=1
         `;
 
@@ -262,7 +284,12 @@ const listSOWs = async (request, reply) => {
         const { rows } = await client.query(query, queryParams);
 
         // Get total count for pagination
-        let countQuery = 'SELECT COUNT(*) FROM sows s WHERE 1=1';
+        let countQuery = `
+            SELECT COUNT(*) 
+            FROM sows s 
+            LEFT JOIN opportunities o ON s.opportunity_id = o.id 
+            WHERE 1=1
+        `;
         const countParams = [];
         paramCount = 1;
 
