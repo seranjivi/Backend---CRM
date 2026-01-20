@@ -19,7 +19,7 @@ exports.createUserSchema = {
       },
       role: {
         type: 'string',
-        enum: ['Admin', 'User', 'Manager'],
+        enum: ['Admin', 'User', 'Manager', 'Presales Lead'],
         default: 'User'
       },
       regions: {

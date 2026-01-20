@@ -498,10 +498,175 @@ const deleteClient = async (request, reply) => {
   }
 };
 
+const importClients = async (request, reply) => {
+  const { clients } = request.body;
+  
+  if (!Array.isArray(clients) || clients.length === 0) {
+    return reply.status(400).send({
+      success: false,
+      message: 'Invalid or empty clients array in request body'
+    });
+  }
+
+  const client = await getClient();
+  const results = {
+    total: clients.length,
+    success: 0,
+    failed: 0,
+    errors: []
+  };
+
+  try {
+    await client.query('BEGIN');
+
+    for (const [index, clientData] of clients.entries()) {
+      try {
+        const { 
+          client_name, 
+          email, 
+          website, 
+          industry, 
+          customer_type, 
+          tax_id, 
+          status = 'active', 
+          notes, 
+          user_id,
+          contacts = [],
+          addresses = []
+        } = clientData;
+
+        if (!client_name || !user_id) {
+          throw new Error('Missing required fields: client_name and user_id are required');
+        }
+
+        // Insert client
+        const clientQuery = `
+          INSERT INTO clients (
+            client_name, email, website, industry, 
+            customer_type, tax_id, status, notes, user_id
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          RETURNING client_id, client_code
+        `;
+        
+        const clientValues = [
+          client_name, 
+          email || null, 
+          website || null, 
+          industry || null, 
+          customer_type || null, 
+          tax_id || null, 
+          status, 
+          notes || null, 
+          user_id
+        ];
+        
+        const clientResult = await client.query(clientQuery, clientValues);
+        const { client_id } = clientResult.rows[0];
+
+        // Insert contacts if any
+        if (contacts.length > 0) {
+          const contactValues = contacts.map(contact => [
+            client_id,
+            contact.name,
+            contact.email || null,
+            contact.phone || null,
+            contact.designation || null
+          ]);
+          
+          const contactQuery = `
+            INSERT INTO client_contacts 
+              (client_id, name, email, phone, designation)
+            SELECT * FROM UNNEST($1::int[], $2::text[], $3::text[], $4::text[], $5::text[])
+          `;
+          
+          await client.query(contactQuery, [
+            contactValues.map(cv => client_id),
+            contactValues.map(cv => cv[1]),
+            contactValues.map(cv => cv[2]),
+            contactValues.map(cv => cv[3]),
+            contactValues.map(cv => cv[4])
+          ]);
+        }
+
+        // Insert addresses if any
+        if (addresses.length > 0) {
+          const addressValues = addresses.map(addr => [
+            client_id,
+            addr.address_line1 || null,
+            addr.address_line2 || null,
+            addr.city || null,
+            addr.region_state || null,
+            addr.country || null,
+            addr.postal_code || null,
+            !!addr.is_primary
+          ]);
+
+          const addressQuery = `
+            INSERT INTO client_addresses (
+              client_id, address_line1, address_line2, city, 
+              region_state, country, postal_code, is_primary
+            ) 
+            SELECT * FROM UNNEST(
+              $1::int[], 
+              $2::text[], 
+              $3::text[], 
+              $4::text[], 
+              $5::text[], 
+              $6::text[], 
+              $7::text[], 
+              $8::boolean[]
+            )
+          `;
+
+          await client.query(addressQuery, [
+            addressValues.map(av => client_id),
+            addressValues.map(av => av[1]),
+            addressValues.map(av => av[2]),
+            addressValues.map(av => av[3]),
+            addressValues.map(av => av[4]),
+            addressValues.map(av => av[5]),
+            addressValues.map(av => av[6]),
+            addressValues.map(av => av[7])
+          ]);
+        }
+
+        results.success++;
+      } catch (error) {
+        console.error(`Error importing client at index ${index}:`, error);
+        results.failed++;
+        results.errors.push({
+          index,
+          error: error.message,
+          data: clientData
+        });
+      }
+    }
+
+    await client.query('COMMIT');
+    
+    reply.status(200).send({
+      success: true,
+      message: 'Import completed',
+      data: results
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error during import:', error);
+    reply.status(500).send({
+      success: false,
+      message: 'Error during import',
+      error: error.message
+    });
+  } finally {
+    client.release();
+  }
+};
+
 module.exports = {
   createClient,
   getClientById,
   listClients,
   updateClient,
-  deleteClient
+  deleteClient,
+  importClients
 };

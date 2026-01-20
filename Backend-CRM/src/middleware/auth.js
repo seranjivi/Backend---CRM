@@ -2,6 +2,24 @@
 const fp = require('fastify-plugin');
 const jwt = require('jsonwebtoken');
 
+// Define role-based access control (RBAC) configuration
+const RBAC_CONFIG = {
+  'Presales Lead': {
+    allowedModules: ['clients', 'opportunities'],
+    permissions: {
+      clients: ['read', 'write'],
+      opportunities: ['read']
+    }
+  },
+  // Add other roles here as needed
+  'Admin': {
+    allowedModules: ['*'], // Access to all modules
+    permissions: {
+      '*': ['*'] // All permissions
+    }
+  }
+};
+
 module.exports = fp(async function (fastify, options) {
   // Authentication middleware
   fastify.decorate('authenticate', async function (request, reply) {
@@ -33,13 +51,20 @@ module.exports = fp(async function (fastify, options) {
         throw new Error('User account is not active');
       }
 
+      // Get role configuration
+      const roleConfig = RBAC_CONFIG[user.role_name] || {
+        allowedModules: [],
+        permissions: {}
+      };
+
       // Attach user to request with role information
       request.user = {
         id: user.id,
         email: user.email,
         status: user.status,
         role_id: user.role_id,
-        role: user.role_name
+        role: user.role_name,
+        permissions: roleConfig
       };
     } catch (error) {
       console.error('Authentication error:', error.message);
@@ -52,36 +77,47 @@ module.exports = fp(async function (fastify, options) {
   });
 
   // Authorization middleware
-  fastify.decorate('authorize', function (roles = []) {
+  fastify.decorate('authorize', function (requiredPermissions = []) {
     return function (request, reply, done) {
-      try {
-        if (!request.user) {
-          throw new Error('Not authenticated');
-        }
+      if (!request.user) {
+        reply.code(401).send({ 
+          statusCode: 401,
+          error: 'Unauthorized',
+          message: 'Authentication required' 
+        });
+        return;
+      }
 
-        // If user is admin, grant all access
-        if (request.user.role && request.user.role.toLowerCase() === 'admin') {
-          return done();
-        }
-
-        // Check if user has any of the required roles
-        if (roles.length > 0 && !roles.some(role => 
-          request.user.role && request.user.role.toLowerCase() === role.toLowerCase()
-        )) {
-          throw new Error('Insufficient permissions');
-        }
-
+      // If no specific permissions required, just check authentication
+      if (requiredPermissions.length === 0) {
         done();
-      } catch (error) {
-        console.error('Authorization error:', error.message);
+        return;
+      }
+
+      const { role, permissions } = request.user;
+      const [module, action = '*'] = requiredPermissions[0].split(':');
+
+      // Check if user's role has access to the module
+      const hasModuleAccess = permissions.allowedModules.includes('*') || 
+                             permissions.allowedModules.includes(module);
+
+      // Check if user has the required permission
+      const hasPermission = permissions.permissions[module]?.includes('*') || 
+                          permissions.permissions[module]?.includes(action) ||
+                          permissions.permissions['*']?.includes('*');
+
+      if (!hasModuleAccess || !hasPermission) {
+        console.log(`Access denied for ${role} to ${requiredPermissions[0]}`);
         reply.code(403).send({ 
           statusCode: 403,
           error: 'Forbidden',
-          message: error.message || 'Access denied',
-          userRole: request.user?.role,
-          requiredRoles: roles
+          message: 'Insufficient permissions to access this resource',
+          requiredPermission: requiredPermissions[0]
         });
+        return;
       }
+      
+      done();
     };
   });
 });
