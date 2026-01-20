@@ -114,8 +114,10 @@ const Opportunity = (fastify) => ({
     INSERT INTO opportunities (
       opportunity_name, client_name, close_date, amount_currency, amount,
       opportunity_type, lead_source, triaged_status, pipeline_status,
-      win_probability, user_id, role_id, approval_stage
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'LEVEL_1_RFB') 
+      win_probability, user_id, role_id, approval_stage,
+      start_date, sales_owner, technical_poc, presales_poc, next_steps
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'LEVEL_1_RFB', 
+             $13, $14, $15, $16, $17) 
     RETURNING *
   `,
   values: [
@@ -130,8 +132,14 @@ const Opportunity = (fastify) => ({
     pipeline_status,
     win_probability,
     user_id,
-    role_id
-  ]};
+    role_id,
+    opportunityData.start_date || null,        
+    opportunityData.sales_owner || null,        
+    opportunityData.technical_poc || null,      
+    opportunityData.presales_poc || null,
+    opportunityData.next_steps || null
+  ]
+};
 
       const insertResult = await client.query(query);
 
@@ -181,7 +189,12 @@ const Opportunity = (fastify) => ({
       pipeline_status,
       win_probability,
       user_id,
-      role_id
+      role_id,
+      start_date,
+      sales_owner,
+      technical_poc,
+      presales_poc,
+      next_steps
     } = opportunityData;
 
     try {
@@ -199,8 +212,13 @@ const Opportunity = (fastify) => ({
           win_probability = COALESCE($10, win_probability),
           user_id = COALESCE($11, user_id),
           role_id = COALESCE($12, role_id),
+          start_date = COALESCE($13, start_date),
+          sales_owner = COALESCE($14, sales_owner),
+          technical_poc = COALESCE($15, technical_poc),
+          presales_poc = COALESCE($16, presales_poc),
+          next_steps = COALESCE($17, next_steps),
           updated_at = NOW()
-        WHERE id = $13
+        WHERE id = $18
         RETURNING *`,
         [
           opportunity_name,
@@ -215,6 +233,11 @@ const Opportunity = (fastify) => ({
           win_probability,
           user_id,
           role_id,
+          start_date,
+          sales_owner,
+          technical_poc,
+          presales_poc,
+          next_steps,
           id
         ]
       );

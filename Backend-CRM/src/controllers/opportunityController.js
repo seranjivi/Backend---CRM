@@ -222,6 +222,11 @@ module.exports = (fastify) => {
       close_date: new Date().toISOString().split('T')[0], // Today's date
       amount_currency: 'USD',
       amount: '10000',
+      start_date: new Date(Date.now() + 86400000 * 7).toISOString().split('T')[0], // 7 days from now
+      sales_owner: 'John Doe',
+      technical_poc: 'Jane Smith',
+      presales_poc: 'Mike Johnson',
+      next_steps: 'Schedule demo with client, Send proposal',
       opportunity_type: 'New Business',
       lead_source: 'Website',
       triaged_status: 'Qualified',
@@ -242,6 +247,11 @@ module.exports = (fastify) => {
       { wch: 15 }, // close_date
       { wch: 15 }, // amount_currency
       { wch: 12 }, // amount
+      { wch: 15 }, // start_date
+      { wch: 20 }, // sales_owner
+      { wch: 20 }, // technical_poc
+      { wch: 20 }, // presales_poc
+      { wch: 30 }, // next_steps
       { wch: 20 }, // opportunity_type
       { wch: 15 }, // lead_source
       { wch: 15 }, // triaged_status
@@ -346,6 +356,11 @@ module.exports = (fastify) => {
             close_date: new Date(row.close_date).toISOString(),
             amount_currency: row.amount_currency || 'USD',
             amount: amount,
+            start_date: row.start_date ? new Date(row.start_date).toISOString() : null,
+            sales_owner: row.sales_owner || null,
+            technical_poc: row.technical_poc || null,
+            presales_poc: row.presales_poc || null,
+            next_steps: row.next_steps || null,
             opportunity_type: row.opportunity_type || null,
             lead_source: row.lead_source || null,
             triaged_status: row.triaged_status || null,
