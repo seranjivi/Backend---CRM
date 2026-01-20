@@ -278,4 +278,79 @@ module.exports = async (fastify, options) => {
       }
     }
   }, controller.getOpportunitiesByStatus);
+
+fastify.get('/template', {
+    preValidation: [fastify.authenticate],
+    schema: {
+      tags: ['opportunities'],
+      description: 'Download opportunity import template',
+      security: [{ bearerAuth: [] }],
+      response: {
+        200: {
+          type: 'string',
+          format: 'binary'
+        },
+        500: {
+          type: 'object',
+          properties: {
+            status: { type: 'string' },
+            message: { type: 'string' },
+            error: { type: 'string' }
+          }
+        }
+      }
+    }
+  }, controller.downloadTemplate);
+  fastify.post('/import', {
+    preValidation: [fastify.authenticate],
+    schema: {
+      tags: ['opportunities'],
+      description: 'Import opportunities from file',
+      security: [{ bearerAuth: [] }],
+      consumes: ['multipart/form-data'],
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            status: { type: 'string' },
+            message: { type: 'string' },
+            data: {
+              type: 'object',
+              properties: {
+                total: { type: 'number' },
+                success: { type: 'number' },
+                failures: { type: 'number' },
+                errors: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      row: { type: 'number' },
+                      error: { type: 'string' },
+                      data: { type: 'object' }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        400: {
+          type: 'object',
+          properties: {
+            status: { type: 'string' },
+            message: { type: 'string' }
+          }
+        },
+        500: {
+          type: 'object',
+          properties: {
+            status: { type: 'string' },
+            message: { type: 'string' },
+            error: { type: 'string' }
+          }
+        }
+      }
+    }
+  }, controller.importOpportunities);
 };

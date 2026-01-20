@@ -5,7 +5,9 @@ const {
   listClients,
   updateClient,
   deleteClient,
-  importClients 
+  importClients ,
+  downloadClientTemplate,
+  importClientsFromFile
 } = require('../controllers/clientController');
 
 async function clientRoutes(fastify, options) {
@@ -222,6 +224,81 @@ async function clientRoutes(fastify, options) {
       }
     }
   }, importClients);
+  fastify.get('/template', {
+  preValidation: [fastify.authenticate, fastify.authorize(['clients:write'])],
+  schema: {
+    tags: ['clients'],
+    description: 'Download client import template',
+    security: [{ bearerAuth: [] }],
+    response: {
+      200: {
+        type: 'string',
+        format: 'binary'
+      },
+      500: {
+        type: 'object',
+        properties: {
+          status: { type: 'string' },
+          message: { type: 'string' },
+          error: { type: 'string' }
+        }
+      }
+    }
+  }
+}, downloadClientTemplate);
+// Import clients from file
+fastify.post('/import/file', {
+  preValidation: [fastify.authenticate, fastify.authorize(['clients:write'])],
+  schema: {
+    tags: ['clients'],
+    description: 'Import clients from file (CSV/Excel)',
+    security: [{ bearerAuth: [] }],
+    consumes: ['multipart/form-data'],
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          status: { type: 'string' },
+          message: { type: 'string' },
+          data: {
+            type: 'object',
+            properties: {
+              total: { type: 'number' },
+              success: { type: 'number' },
+              failures: { type: 'number' },
+              errors: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    row: { type: 'number' },
+                    error: { type: 'string' },
+                    data: { type: 'object' }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      400: {
+        type: 'object',
+        properties: {
+          status: { type: 'string' },
+          message: { type: 'string' }
+        }
+      },
+      500: {
+        type: 'object',
+        properties: {
+          status: { type: 'string' },
+          message: { type: 'string' },
+          error: { type: 'string' }
+        }
+      }
+    }
+  }
+}, importClientsFromFile);
 }
 
 module.exports = clientRoutes;

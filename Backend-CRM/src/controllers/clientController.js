@@ -1,6 +1,7 @@
 // src/controllers/clientController.js
 const { query, getClient } = require('../config/db');
-
+const { parse } = require('csv-parse/sync');
+const xlsx = require('xlsx');
 const createClient = async (request, reply) => {
   const {
     client_name,
@@ -662,11 +663,236 @@ const importClients = async (request, reply) => {
   }
 };
 
+const downloadClientTemplate = async (request, reply) => {
+  try {
+    // Create sample client data
+    const sampleData = [{
+      client_name: 'Sample Client Inc.',
+      email: 'contact@sampleclient.com',
+      website: 'https://sampleclient.com',
+      industry: 'Technology',
+      customer_type: 'Enterprise',
+      tax_id: 'TAX123456',
+      status: 'active',
+      notes: 'Sample client for import template',
+      user_id: 1,
+      contact_name: 'John Doe',
+      contact_email: 'john.doe@sampleclient.com',
+      contact_phone: '+1234567890',
+      contact_designation: 'CEO',
+      address_line1: '123 Business St',
+      address_line2: 'Suite 100',
+      city: 'Metropolis',
+      region_state: 'CA',
+      country: 'USA',
+      postal_code: '12345',
+      is_primary: true
+    }];
+
+    // Create workbook and worksheet
+    const wb = xlsx.utils.book_new();
+    const ws = xlsx.utils.json_to_sheet(sampleData);
+    
+    // Set column widths
+    const columnWidths = [
+      { wch: 20 }, // client_name
+      { wch: 25 }, // email
+      { wch: 25 }, // website
+      { wch: 15 }, // industry
+      { wch: 15 }, // customer_type
+      { wch: 15 }, // tax_id
+      { wch: 10 }, // status
+      { wch: 25 }, // notes
+      { wch: 8 },  // user_id
+      { wch: 15 }, // contact_name
+      { wch: 25 }, // contact_email
+      { wch: 15 }, // contact_phone
+      { wch: 20 }, // contact_designation
+      { wch: 25 }, // address_line1
+      { wch: 15 }, // address_line2
+      { wch: 15 }, // city
+      { wch: 15 }, // region_state
+      { wch: 10 }, // country
+      { wch: 12 }, // postal_code
+      { wch: 10 }  // is_primary
+    ];
+    
+    ws['!cols'] = columnWidths;
+    
+    // Add worksheet to workbook
+    xlsx.utils.book_append_sheet(wb, ws, 'Clients');
+    
+    // Generate buffer
+    const buffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    
+    // Set headers for file download
+    reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    reply.header('Content-Disposition', 'attachment; filename=client_import_template.xlsx');
+    
+    return buffer;
+  } catch (error) {
+    request.log.error('Error generating client template:', error);
+    return reply.status(500).send({
+      status: 'error',
+      message: 'Failed to generate client template',
+      error: error.message
+    });
+  }
+};
+const importClientsFromFile = async (request, reply) => {
+  if (!request.isMultipart()) {
+    return reply.status(400).send({
+      status: 'error',
+      message: 'Request is not multipart'
+    });
+  }
+  const data = await request.file();
+  const fileBuffer = await data.toBuffer();
+  const fileExtension = data.filename.split('.').pop().toLowerCase();
+  
+  try {
+    let records = [];
+    
+    // Parse file based on extension
+    if (fileExtension === 'csv') {
+      records = parse(fileBuffer, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true
+      });
+    } else if (['xlsx', 'xls'].includes(fileExtension)) {
+      const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
+      const sheetName = workbook.SheetNames[0];
+      records = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
+    } else {
+      return reply.status(400).send({
+        status: 'error',
+        message: 'Unsupported file format. Please upload a CSV or Excel file.'
+      });
+    }
+    if (!records.length) {
+      return reply.status(400).send({
+        status: 'error',
+        message: 'No records found in the file'
+      });
+    }
+    const results = {
+      total: records.length,
+      success: 0,
+      failures: 0,
+      errors: []
+    };
+    // Process each record
+    for (let i = 0; i < records.length; i++) {
+      const row = records[i];
+      const rowNumber = i + 2; // +2 because of 0-based index and header row
+      
+      try {
+        // Validate required fields
+        if (!row.client_name) {
+          throw new Error('Missing required field: client_name');
+        }
+        // Prepare client data
+        const clientData = {
+          client_name: row.client_name,
+          email: row.email || null,
+          website: row.website || null,
+          industry: row.industry || null,
+          customer_type: row.customer_type || null,
+          tax_id: row.tax_id || null,
+          status: row.status || 'active',
+          notes: row.notes || null,
+          user_id: row.user_id || request.user.id,
+          contacts: [],
+          addresses: []
+        };
+        // Add contact if provided
+        if (row.contact_name) {
+          clientData.contacts.push({
+            name: row.contact_name,
+            email: row.contact_email || null,
+            phone: row.contact_phone || null,
+            designation: row.contact_designation || null
+          });
+        }
+        // Add address if provided
+        if (row.address_line1) {
+          clientData.addresses.push({
+            address_line1: row.address_line1,
+            address_line2: row.address_line2 || '',
+            city: row.city || '',
+            region_state: row.region_state || '',
+            country: row.country || '',
+            postal_code: row.postal_code || '',
+            is_primary: row.is_primary === 'true' || row.is_primary === true
+          });
+        }
+        // Use the existing importClients function
+        await importClients({
+          body: { clients: [clientData] },
+          user: request.user
+        }, {
+          status: (code) => ({
+            send: (response) => {
+              if (code >= 400) {
+                throw new Error(response.message || 'Failed to import client');
+              }
+              return response;
+            }
+          }),
+          send: () => ({})
+        });
+        results.success++;
+        
+      } catch (error) {
+        results.failures++;
+        results.errors.push({
+          row: rowNumber,
+          error: error.message,
+          data: row
+        });
+        
+        // Log detailed error for debugging
+        request.log.error(`Error processing row ${rowNumber}:`, {
+          error: error.message,
+          data: row,
+          stack: error.stack
+        });
+      }
+    }
+    // Prepare response
+    const response = {
+      status: results.failures === 0 ? 'success' : 'partial_success',
+      message: `Processed ${results.total} records`,
+      data: {
+        total: results.total,
+        success: results.success,
+        failures: results.failures
+      }
+    };
+    // Include errors if any
+    if (results.errors.length > 0) {
+      response.data.errors = results.errors;
+    }
+    return response;
+    
+  } catch (error) {
+    request.log.error('Error processing client import:', error);
+    return reply.status(500).send({
+      status: 'error',
+      message: 'Failed to process import file',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   createClient,
   getClientById,
   listClients,
   updateClient,
   deleteClient,
-  importClients
+  importClients,
+  downloadClientTemplate,
+  importClientsFromFile
 };
