@@ -4,6 +4,13 @@ const jwt = require('jsonwebtoken');
 
 // Define role-based access control (RBAC) configuration
 const RBAC_CONFIG = {
+  'Presales Member': {
+    allowedModules: ['clients', 'opportunities'],
+    permissions: {
+      clients: ['read', 'write'],  // Full access to clients
+      opportunities: ['read', 'write']  // Full access to opportunities
+    }
+  },
   'Presales Lead': {
     allowedModules: ['clients', 'opportunities'],
     permissions: {
@@ -11,7 +18,13 @@ const RBAC_CONFIG = {
       opportunities: ['read']
     }
   },
-  // Add other roles here as needed
+  'Sales Head': {
+    allowedModules: ['clients'],  // Only clients module
+    permissions: {
+      clients: ['read', 'write'],  // Full access to clients
+      opportunities: []  // No access to opportunities
+    }
+  },
   'Admin': {
     allowedModules: ['*'], // Access to all modules
     permissions: {
