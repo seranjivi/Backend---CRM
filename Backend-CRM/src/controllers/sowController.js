@@ -128,6 +128,15 @@ const createSOW = async (request, reply) => {
         sowResult = result.rows[0];
         console.log('SOW created successfully. Result:', sowResult);
         
+        // Update opportunity status to 'Approved' when SOW is submitted
+        if (fields.status === 'Submitted' && fields.opportunity_id) {
+            await client.query(
+                'UPDATE opportunities SET approval_stage = $1 WHERE id = $2',
+                ['Approved', fields.opportunity_id]
+            );
+            console.log('Opportunity status updated to Approved for opportunity_id:', fields.opportunity_id);
+        }
+        
         // Use sow_id instead of id
         if (!sowResult || !sowResult.sow_id) {
             throw new Error('No valid sow_id returned after SOW creation');
