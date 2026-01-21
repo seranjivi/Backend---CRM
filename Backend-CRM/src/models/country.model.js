@@ -18,6 +18,18 @@ class Country {
     const { rows } = await pool.query(query, [id]);
     return rows[0];
   }
+
+  static async getByRegionId(regionId) {
+    const query = `
+      SELECT c.id, c.name, c.code, c.phone_code
+      FROM countries c
+      INNER JOIN regions r ON c.region_id = r.id
+      WHERE r.id = $1 AND c.is_active = true
+      ORDER BY c.name ASC
+    `;
+    const { rows } = await pool.query(query, [regionId]);
+    return rows;
+  }
 }
 
 module.exports = Country;

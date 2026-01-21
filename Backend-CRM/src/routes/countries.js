@@ -1,4 +1,4 @@
-const { countryListSchema, countryGetSchema } = require('../schemas/country.schema');
+const { countryListSchema, countryGetSchema, countriesByRegionSchema } = require('../schemas/country.schema');
 const countryController = require('../controllers/countryController');
 
 async function countryRoutes(fastify, options) {
@@ -12,6 +12,12 @@ async function countryRoutes(fastify, options) {
   fastify.get('/:id', 
     { schema: countryGetSchema },
     countryController.getCountryById
+  );
+
+  // Get countries by region ID
+  fastify.get('/by-region/:regionId',
+    { schema: countriesByRegionSchema },
+    countryController.getCountriesByRegionId
   );
 }
 

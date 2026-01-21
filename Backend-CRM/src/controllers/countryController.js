@@ -53,6 +53,39 @@ const countryController = {
       });
     }
   },
+
+  /**
+   * Get countries by region ID
+   * @param {Object} request
+   * @param {Object} reply
+   */
+  async getCountriesByRegionId(request, reply) {
+    try {
+      const { regionId } = request.params;
+      
+      // Validate regionId is a number
+      if (isNaN(regionId)) {
+        return reply.status(400).send({
+          success: false,
+          message: 'Invalid region ID',
+        });
+      }
+
+      const countries = await Country.getByRegionId(regionId);
+      
+      return reply.send({
+        success: true,
+        data: countries,
+      });
+    } catch (error) {
+      request.log.error(error);
+      return reply.status(500).send({
+        success: false,
+        message: 'Error fetching countries by region',
+        error: error.message,
+      });
+    }
+  },
 };
 
 module.exports = countryController;

@@ -2,7 +2,54 @@
 const { regionListSchema, regionByCountrySchema } = require('../schemas/region.schema');
 const regionController = require('../controllers/regionController');
 
+// Schema for regions with countries
+const regionWithCountriesSchema = {
+  schema: {
+    description: 'Get all regions with their associated countries',
+    tags: ['Regions'],
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean' },
+          data: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'number' },
+                name: { type: 'string' },
+                code: { type: 'string' },
+                countries: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      id: { type: 'number' },
+                      name: { type: 'string' },
+                      code: { type: 'string' }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
 async function regionRoutes(fastify, options) {
+  // Get all regions with their countries
+  fastify.get('/with-countries', 
+    { 
+      ...regionWithCountriesSchema,
+      preValidation: [fastify.authenticate] 
+    },
+    regionController.getRegionsWithCountries
+  );
+
   // Get all regions
   fastify.get('/', 
     { 

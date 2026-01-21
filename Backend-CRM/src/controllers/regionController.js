@@ -2,6 +2,28 @@ const Region = require('../models/region.model');
 
 const regionController = {
   /**
+   * Get all regions with their associated countries
+   * @param {Object} request
+   * @param {Object} reply
+   */
+  async getRegionsWithCountries(request, reply) {
+    try {
+      const regions = await Region.getAllWithCountries();
+      return reply.send({
+        success: true,
+        data: regions,
+      });
+    } catch (error) {
+      request.log.error(error);
+      return reply.status(500).send({
+        success: false,
+        message: 'Error fetching regions with countries',
+        error: error.message,
+      });
+    }
+  },
+
+  /**
    * Get all regions
    * @param {Object} request
    * @param {Object} reply

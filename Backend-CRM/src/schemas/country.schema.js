@@ -12,6 +12,34 @@ const countryResponse = {
 };
 
 // Request schemas
+const countriesByRegionSchema = {
+  description: 'Get countries by region ID',
+  tags: ['countries'],
+  params: Type.Object({
+    regionId: Type.String({ pattern: '^\\d+$' }) 
+  }),
+  response: {
+    200: Type.Object({
+      success: Type.Boolean(),
+      data: Type.Array(Type.Object({
+        id: Type.Number(),
+        name: Type.String(),
+        code: Type.String(),
+        phone_code: Type.Optional(Type.String())
+      }))
+    }),
+    400: Type.Object({
+      success: Type.Boolean(),
+      message: Type.String()
+    }),
+    500: Type.Object({
+      success: Type.Boolean(),
+      message: Type.String(),
+      error: Type.String()
+    })
+  }
+};
+
 const countryListSchema = {
   description: 'Get all countries',
   tags: ['countries'],
@@ -53,5 +81,6 @@ const countryGetSchema = {
 
 module.exports = {
   countryListSchema,
-  countryGetSchema
+  countryGetSchema,
+  countriesByRegionSchema
 };

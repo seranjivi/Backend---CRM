@@ -5,6 +5,53 @@ const pool = require('../config/db');
  * Represents geographical regions in the system
  */
 const Region = {
+  // Get all regions with their countries
+  async getAllWithCountries() {
+    try {
+      const query = `
+        SELECT 
+          r.id as region_id, 
+          r.name as region_name, 
+          r.code as region_code,
+          c.id as country_id,
+          c.name as country_name,
+          c.code as country_code
+        FROM regions r
+        LEFT JOIN countries c ON r.id = c.region_id
+        WHERE r.is_active = true AND (c.is_active = true OR c.id IS NULL)
+        ORDER BY r.name, c.name
+      `;
+      const result = await pool.query(query);
+      
+      // Group countries by region
+      const regionsMap = new Map();
+      
+      result.rows.forEach(row => {
+        if (!regionsMap.has(row.region_id)) {
+          regionsMap.set(row.region_id, {
+            id: row.region_id,
+            name: row.region_name,
+            code: row.region_code,
+            countries: []
+          });
+        }
+        
+        if (row.country_id) {
+          regionsMap.get(row.region_id).countries.push({
+            id: row.country_id,
+            name: row.country_name,
+            code: row.country_code
+          });
+        }
+      });
+      
+      return Array.from(regionsMap.values());
+    } catch (error) {
+      console.error('Error fetching regions with countries:', error);
+      throw error;
+    }
+  },
+
   // Get all regions
   async getAll() {
     try {
