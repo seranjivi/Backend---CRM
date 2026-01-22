@@ -211,16 +211,12 @@ const getClientById = async (request, reply) => {
 const listClients = async (request, reply) => {
   try {
     const { 
-      page = 1, 
-      limit = 10, 
       status, 
       industry, 
       search 
     } = request.query;
     
-    const offset = (page - 1) * limit;
-    const queryParams = [limit, offset];
-    
+    const queryParams = [];
     let whereClause = 'WHERE 1=1';
     
     if (status) {
@@ -238,7 +234,7 @@ const listClients = async (request, reply) => {
       whereClause += ` AND (c.client_name ILIKE $${queryParams.length} OR c.email ILIKE $${queryParams.length})`;
     }
     
-    // Get clients with pagination
+    // Get all clients
     const clientsQuery = `
       SELECT 
         c.client_id,
@@ -256,35 +252,14 @@ const listClients = async (request, reply) => {
       LEFT JOIN users u ON c.user_id = u.id
       ${whereClause}
       ORDER BY c.created_at DESC
-      LIMIT $1 OFFSET $2
     `;
     
-    // Get total count for pagination
-    const countQuery = `
-      SELECT COUNT(*) as total 
-      FROM clients c
-      ${whereClause}
-    `;
-    
-    const [clientsResult, countResult] = await Promise.all([
-      query(clientsQuery, queryParams),
-      query(countQuery, queryParams.slice(2)) // Skip limit and offset for count
-    ]);
-    
-    const total = parseInt(countResult.rows[0]?.total || 0, 10);
-    const totalPages = Math.ceil(total / limit);
+    const clientsResult = await query(clientsQuery, queryParams);
     
     reply.send({
       success: true,
       data: clientsResult.rows,
-      pagination: {
-        total,
-        total_pages: totalPages,
-        current_page: parseInt(page, 10),
-        per_page: parseInt(limit, 10),
-        has_next_page: page < totalPages,
-        has_prev_page: page > 1
-      }
+      total: clientsResult.rows.length
     });
     
   } catch (error) {
