@@ -50,17 +50,31 @@ const Opportunity = (fastify) => ({
       // First try with the full query including joins
       try {
         const result = await this.db.query(`
-          SELECT o.*, 
-                 u.full_name as user_name, 
-                 r.name as role_name 
+          SELECT 
+            o.*, 
+            u.full_name as user_name, 
+            r.name as role_name,
+            so.full_name as sales_owner_name,
+            tp.full_name as technical_poc_name,
+            pp.full_name as presales_poc_name
           FROM opportunities o
           LEFT JOIN users u ON o.user_id = u.id
           LEFT JOIN roles r ON o.role_id = r.id
+          LEFT JOIN users so ON o.sales_owner::integer = so.id
+          LEFT JOIN users tp ON o.technical_poc::integer = tp.id
+          LEFT JOIN users pp ON o.presales_poc::integer = pp.id
           WHERE o.id = $1
         `, [id]);
         
         if (result.rows && result.rows.length > 0) {
-          return result.rows[0];
+          const opportunity = result.rows[0];
+          // Add the names to the response
+          return {
+            ...opportunity,
+            sales_owner_name: opportunity.sales_owner_name || null,
+            technical_poc_name: opportunity.technical_poc_name || null,
+            presales_poc_name: opportunity.presales_poc_name || null
+          };
         } else {
           console.log('[getById] No results from join query, trying basic query...');
         }
@@ -103,7 +117,12 @@ const Opportunity = (fastify) => ({
         pipeline_status = null,
         win_probability = null,
         user_id = null,
-        role_id = null
+        role_id = null,
+        next_steps = null,
+        sales_owner = null,
+        technical_poc = null,
+        presales_poc = null,
+        start_date = null
       } = opportunityData;
 
  
