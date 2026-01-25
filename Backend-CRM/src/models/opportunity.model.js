@@ -71,6 +71,9 @@ const Opportunity = (fastify) => ({
           // Add the names to the response
           return {
             ...opportunity,
+            sales_owner: opportunity.sales_owner ? parseInt(opportunity.sales_owner, 10) : null,
+            technical_poc: opportunity.technical_poc ? parseInt(opportunity.technical_poc, 10) : null,
+            presales_poc: opportunity.presales_poc ? parseInt(opportunity.presales_poc, 10) : null,
             sales_owner_name: opportunity.sales_owner_name || null,
             technical_poc_name: opportunity.technical_poc_name || null,
             presales_poc_name: opportunity.presales_poc_name || null

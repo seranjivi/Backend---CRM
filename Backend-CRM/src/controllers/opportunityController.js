@@ -34,7 +34,7 @@ module.exports = (fastify) => {
   // Get opportunity by ID
   // ✅ FIXED: Get opportunity by ID
   const getOpportunityById = async (request, reply) => {
-    const opportunityId = Number(request.params.id); // 🔥 IMPORTANT FIX
+    const opportunityId = Number(request.params.id); // IMPORTANT FIX
 
     if (isNaN(opportunityId)) {
       return reply.status(400).send({
