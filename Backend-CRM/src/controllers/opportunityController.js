@@ -52,6 +52,44 @@ module.exports = (fastify) => {
           message: 'Opportunity not found'
         });
       }
+      
+      // Parse next_steps if it's a string (JSON)
+      if (opportunity.next_steps && typeof opportunity.next_steps === 'string') {
+        try {
+          opportunity.next_steps = JSON.parse(opportunity.next_steps);
+          
+          // Ensure next_steps is an array
+          if (!Array.isArray(opportunity.next_steps)) {
+            console.warn('next_steps is not an array, converting to array');
+            opportunity.next_steps = [];
+          }
+          
+          // Ensure each step has required fields
+          opportunity.next_steps = opportunity.next_steps.map(step => ({
+            step: step.step || '',
+            assigned_to: step.assigned_to || null,
+            due_date: step.due_date || null,
+            status: step.status || 'pending',
+            created_at: step.created_at || new Date().toISOString(),
+            updated_at: step.updated_at || new Date().toISOString()
+          }));
+          
+        } catch (e) {
+          console.error('Error parsing next_steps:', e);
+          // If parsing fails, set to empty array
+          opportunity.next_steps = [{
+            step: opportunity.next_steps, // Use the raw string as the step
+            assigned_to: null,
+            due_date: null,
+            status: 'pending',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }];
+        }
+      } else if (!opportunity.next_steps) {
+        // Ensure next_steps is always an array, even if null/undefined
+        opportunity.next_steps = [];
+      }
 
       return {
         status: 'success',
@@ -77,6 +115,50 @@ module.exports = (fastify) => {
         console.warn('No user_id provided and no authenticated user available');
       }
       
+      // Process next_steps if provided
+      if (request.body.next_steps) {
+        try {
+          // If next_steps is a string, parse it as JSON
+          if (typeof request.body.next_steps === 'string') {
+            request.body.next_steps = JSON.parse(request.body.next_steps);
+          }
+          
+          // Validate next_steps is an array
+          if (!Array.isArray(request.body.next_steps)) {
+            return reply.status(400).send({
+              status: 'error',
+              message: 'next_steps must be an array of objects'
+            });
+          }
+          
+          // Validate each next step object
+          for (const step of request.body.next_steps) {
+            if (!step.step || typeof step.step !== 'string') {
+              return reply.status(400).send({
+                status: 'error',
+                message: 'Each next step must have a valid step description'
+              });
+            }
+            
+            // Set default values if not provided
+            step.assigned_to = step.assigned_to || null;
+            step.due_date = step.due_date || null;
+            step.status = step.status || 'pending';
+            step.created_at = new Date().toISOString();
+            step.updated_at = new Date().toISOString();
+          }
+          
+          // Stringify the next_steps array for storage
+          request.body.next_steps = JSON.stringify(request.body.next_steps);
+        } catch (error) {
+          console.error('Error processing next_steps:', error);
+          return reply.status(400).send({
+            status: 'error',
+            message: 'Invalid next_steps format. Expected format: [{step: string, assigned_to: string, due_date: string, status: string}]'
+          });
+        }
+      }
+      
       // Create the opportunity
       const opportunity = await opportunityModel.create(request.body);
       if (!opportunity || Object.keys(opportunity).length === 0) {
@@ -84,9 +166,20 @@ module.exports = (fastify) => {
         console.error(errorMsg);
         throw new Error(errorMsg);
       }
-      // Return only status and message, no data field
+      
+      // Parse next_steps back to object for the response
+      if (opportunity.next_steps && typeof opportunity.next_steps === 'string') {
+        try {
+          opportunity.next_steps = JSON.parse(opportunity.next_steps);
+        } catch (e) {
+          console.warn('Failed to parse next_steps:', e);
+        }
+      }
+      
+      // Return the created opportunity with parsed next_steps
       return reply.status(201).send({
         status: 'success',
+        data: opportunity,
         message: 'Opportunity created successfully'
       });
   } catch (error) {
@@ -110,6 +203,80 @@ module.exports = (fastify) => {
   // Update an opportunity
   const updateOpportunity = async (request, reply) => {
     try {
+      // Process next_steps if provided in the update
+      if (request.body.next_steps !== undefined) {
+        try {
+          // Handle both string and object/array inputs
+          if (typeof request.body.next_steps === 'string') {
+            // Try to parse if it's a JSON string
+            try {
+              request.body.next_steps = JSON.parse(request.body.next_steps);
+            } catch (e) {
+              // If it's not JSON, treat as a single step
+              request.body.next_steps = [{
+                step: request.body.next_steps,
+                assigned_to: request.user?.name || 'System',
+                due_date: null,
+                status: 'pending',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              }];
+            }
+          }
+          
+          // If it's a single object, convert to array
+          if (request.body.next_steps && !Array.isArray(request.body.next_steps)) {
+            request.body.next_steps = [{
+              ...request.body.next_steps,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }];
+          }
+          
+          // Validate next_steps is an array
+          if (!Array.isArray(request.body.next_steps)) {
+            return reply.status(400).send({
+              status: 'error',
+              message: 'next_steps must be an array of objects'
+            });
+          }
+          
+          // Get existing opportunity to merge with existing next_steps if needed
+          const existingOpportunity = await opportunityModel.getById(request.params.id);
+          let existingNextSteps = [];
+          
+          if (existingOpportunity && existingOpportunity.next_steps) {
+            try {
+              existingNextSteps = typeof existingOpportunity.next_steps === 'string' 
+                ? JSON.parse(existingOpportunity.next_steps) 
+                : existingOpportunity.next_steps;
+                
+              if (!Array.isArray(existingNextSteps)) {
+                existingNextSteps = [];
+              }
+            } catch (e) {
+              console.warn('Failed to parse existing next_steps:', e);
+              existingNextSteps = [];
+            }
+          }
+          
+          // Merge with existing next_steps if needed
+          // For simplicity, we'll just append new steps to existing ones
+          // You might want to implement deduplication or other logic here
+          const updatedNextSteps = [...existingNextSteps, ...request.body.next_steps];
+          
+          // Stringify for storage
+          request.body.next_steps = JSON.stringify(updatedNextSteps);
+          
+        } catch (error) {
+          console.error('Error processing next_steps:', error);
+          return reply.status(400).send({
+            status: 'error',
+            message: 'Invalid next_steps format. Expected format: [{step: string, assigned_to: string, due_date: string, status: string}]'
+          });
+        }
+      }
+      
       const opportunity = await opportunityModel.update(
         request.params.id, 
         request.body
@@ -120,6 +287,15 @@ module.exports = (fastify) => {
           status: 'error',
           message: 'Opportunity not found'
         });
+      }
+      
+      // Parse next_steps back to object for the response
+      if (opportunity.next_steps && typeof opportunity.next_steps === 'string') {
+        try {
+          opportunity.next_steps = JSON.parse(opportunity.next_steps);
+        } catch (e) {
+          console.warn('Failed to parse next_steps:', e);
+        }
       }
 
       return {
