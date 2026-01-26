@@ -260,10 +260,33 @@ module.exports = (fastify) => {
             }
           }
           
-          // Merge with existing next_steps if needed
-          // For simplicity, we'll just append new steps to existing ones
-          // You might want to implement deduplication or other logic here
-          const updatedNextSteps = [...existingNextSteps, ...request.body.next_steps];
+          // Merge with existing next_steps
+          const updatedNextSteps = [...existingNextSteps];
+          
+          // Update or add each step from the request
+          request.body.next_steps.forEach(newStep => {
+            // Try to find if this step already exists (by step description and assigned_to)
+            const existingStepIndex = updatedNextSteps.findIndex(
+              step => step.step === newStep.step && step.assigned_to === newStep.assigned_to
+            );
+            
+            // If step exists, update it, otherwise add as new
+            if (existingStepIndex >= 0) {
+              // Update existing step
+              updatedNextSteps[existingStepIndex] = {
+                ...updatedNextSteps[existingStepIndex],
+                ...newStep,
+                updated_at: new Date().toISOString()
+              };
+            } else {
+              // Add new step with timestamps
+              updatedNextSteps.push({
+                ...newStep,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              });
+            }
+          });
           
           // Stringify for storage
           request.body.next_steps = JSON.stringify(updatedNextSteps);
