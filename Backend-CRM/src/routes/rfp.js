@@ -1,4 +1,4 @@
-const { createRFP, getAllRFPs, getRFPByOpportunityId } = require('../controllers/rfpController');
+const { createRFP, getAllRFPs, getRFPByOpportunityId, updateRFP } = require('../controllers/rfpController');
 
 module.exports = async function (fastify, options) {
   // Get all RFPs
@@ -39,6 +39,29 @@ module.exports = async function (fastify, options) {
     },
     handler: async (request, reply) => {
       return getRFPByOpportunityId(fastify, request, reply);
+    }
+  });
+  fastify.put('/:id', {
+    preValidation: [fastify.authenticate],
+    config: {
+      payload: {
+        maxFields: 100,
+        maxFileSize: 10 * 1024 * 1024, // 10MB
+        maxFiles: 10,  // Allow multiple document uploads
+        allow: 'multipart/form-data'
+      }
+    },
+    schema: {
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' }
+        },
+        required: ['id']
+      }
+    },
+    handler: async (request, reply) => {
+      return updateRFP(fastify, request, reply);
     }
   });
 };
