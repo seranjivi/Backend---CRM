@@ -197,7 +197,7 @@ const createRFP = async (fastify, request, reply) => {
       `INSERT INTO rfps (
         title,
         rfp_type,
-        rfp_status,
+        status,
         rfp_description,
         solution_description,
         submission_deadline,
