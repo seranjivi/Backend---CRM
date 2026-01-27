@@ -62,11 +62,18 @@ module.exports = async (fastify, options) => {
         properties: {
           opportunity_name: { type: 'string' },
           client_name: { type: 'string' },
-          close_date: { type: 'string', format: 'date' },
+          close_date: { 
+            anyOf: [
+              { type: 'string', format: 'date' },
+              { type: 'null' }
+            ]
+          },
           amount: { type: 'number' },
           amount_currency: { type: 'string', default: 'USD' },
-          start_date: { type: 'string', format: 'date' },
-          sales_owner: { type: 'string' },
+          start_date: { anyOf: [
+            { type: 'string', format: 'date' },
+            { type: 'null' }
+          ]},          sales_owner: { type: 'string' },
           technical_poc: { type: 'string' },
           presales_poc: { type: 'string' },
           opportunity_type: { type: 'string' },
@@ -125,10 +132,18 @@ module.exports = async (fastify, options) => {
         properties: {
           opportunity_name: { type: 'string' },
           client_name: { type: 'string' },
-          close_date: { type: 'string', format: 'date' },
+          close_date: { 
+            anyOf: [
+              { type: 'string', format: 'date' },
+              { type: 'null' }
+            ]
+          },
           amount: { type: 'number' },
           amount_currency: { type: 'string' },
-          start_date: { type: 'string', format: 'date' },
+          start_date: { anyOf: [
+            { type: 'string', format: 'date' },
+            { type: 'null' }
+          ]}   ,
           sales_owner: { type: 'string' },
           technical_poc: { type: 'string' },
           presales_poc: { type: 'string' },
