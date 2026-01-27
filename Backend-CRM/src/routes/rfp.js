@@ -1,4 +1,4 @@
-const { createRFP, getAllRFPs, getRFPByOpportunityId, updateRFP } = require('../controllers/rfpController');
+const { createRFP, getAllRFPs, getRFPByOpportunityId, updateRFP, deleteRFP } = require('../controllers/rfpController');
 
 module.exports = async function (fastify, options) {
   // Get all RFPs
@@ -62,6 +62,23 @@ module.exports = async function (fastify, options) {
     },
     handler: async (request, reply) => {
       return updateRFP(fastify, request, reply);
+    }
+  });
+
+  // Delete RFP by ID
+  fastify.delete('/:id', {
+    preValidation: [fastify.authenticate],
+    schema: {
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' }
+        },
+        required: ['id']
+      }
+    },
+    handler: async (request, reply) => {
+      return deleteRFP(fastify, request, reply);
     }
   });
 };

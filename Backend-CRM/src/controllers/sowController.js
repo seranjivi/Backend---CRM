@@ -353,10 +353,54 @@ const listSOWs = async (request, reply) => {
     }
 };
 
-// Update the exports at the bottom of the file
+const deleteSOW = async (request, reply) => {
+    const client = await getClient();
+    const { id } = request.params;
+    
+    try {
+        await client.query('BEGIN');
+
+        // First, delete associated documents
+        await client.query(
+            'DELETE FROM sow_documents WHERE sow_id = $1',
+            [id]
+        );
+
+        // Then delete the SOW
+        const result = await client.query(
+            'DELETE FROM sows WHERE sow_id = $1 RETURNING *',
+            [id]
+        );
+
+        if (result.rowCount === 0) {
+            return reply.status(404).send({
+                success: false,
+                message: 'SOW not found'
+            });
+        }
+
+        await client.query('COMMIT');
+        
+        return {
+            success: true,
+            message: 'SOW deleted successfully'
+        };
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Error deleting SOW:', error);
+        reply.status(500).send({
+            success: false,
+            error: 'Failed to delete SOW',
+            message: error.message
+        });
+    } finally {
+        client.release();
+    }
+};
+
 module.exports = {
     createSOW,
-    listSOWs
-    // getSOWsByOpportunity,
-    // updateSOW
+    listSOWs,
+    deleteSOW
 };

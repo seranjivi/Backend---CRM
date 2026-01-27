@@ -4,10 +4,17 @@ const {
     getSOWById,
     getSOWsByOpportunity,
     updateSOW,
-    listSOWs
+    listSOWs,
+    deleteSOW
 } = require('../controllers/sowController');
 
 async function sowRoutes(fastify, options) {
+    // Delete SOW by ID
+    fastify.delete('/:id', {
+        preValidation: [fastify.authenticate],
+        handler: deleteSOW
+    });
+
     // Create SOW with file uploads
     fastify.post('/', {
         preValidation: [fastify.authenticate],

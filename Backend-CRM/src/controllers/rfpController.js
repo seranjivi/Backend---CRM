@@ -629,11 +629,58 @@ const updateRFP = async (fastify, request, reply) => {
   }
 };
 
+const deleteRFP = async (fastify, request, reply) => {
+  let client;
+  const { id } = request.params;
+  
+  try {
+    client = await fastify.pg.connect();
+    await client.query('BEGIN');
+
+    // First, delete associated documents
+    await client.query(
+      'DELETE FROM rfp_documents WHERE rfp_id = $1',
+      [id]
+    );
+
+    // Then delete the RFP
+    const result = await client.query(
+      'DELETE FROM rfps WHERE id = $1 RETURNING *',
+      [id]
+    );
+
+    if (result.rowCount === 0) {
+      return reply.status(404).send({
+        success: false,
+        message: 'RFP not found'
+      });
+    }
+
+    await client.query('COMMIT');
+    
+    return {
+      success: true,
+      message: 'RFP deleted successfully'
+    };
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error deleting RFP:', error);
+    reply.status(500).send({
+      success: false,
+      error: 'Failed to delete RFP',
+      message: error.message
+    });
+  } finally {
+    if (client) client.release();
+  }
+};
+
 module.exports = {
   createRFP,
   getAllRFPs,
   handleRFPError,
   getRFPByOpportunityId, 
   updateRFP,
-
+  deleteRFP
 };
