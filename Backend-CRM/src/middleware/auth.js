@@ -7,8 +7,8 @@ const RBAC_CONFIG = {
   'Presales Member': {
     allowedModules: ['clients', 'opportunities'],
     permissions: {
-      clients: ['read', 'write'],  // Full access to clients
-      opportunities: ['read', 'write']  // Full access to opportunities
+      clients: ['read', 'write'],
+      opportunities: ['read', 'write']
     }
   },
   'Presales Lead': {
@@ -19,18 +19,56 @@ const RBAC_CONFIG = {
     }
   },
   'Sales Head': {
-    allowedModules: ['clients'],  // Only clients module
+    allowedModules: ['clients'],
     permissions: {
-      clients: ['read', 'write'],  // Full access to clients
-      opportunities: []  // No access to opportunities
+      clients: ['read', 'write'],
+      opportunities: []
     }
   },
   'Admin': {
-    allowedModules: ['*'], // Access to all modules
+    allowedModules: ['*'],
     permissions: {
-      '*': ['*'] // All permissions
+      '*': ['*']
     }
   }
+};
+
+// Helper function to merge permissions from multiple roles
+const mergePermissions = (roles) => {
+  const merged = {
+    allowedModules: [],
+    permissions: {}
+  };
+
+  // Get unique modules from all roles
+  const allModules = new Set();
+  roles.forEach(role => {
+    const config = RBAC_CONFIG[role] || { allowedModules: [] };
+    config.allowedModules.forEach(module => allModules.add(module));
+  });
+  merged.allowedModules = Array.from(allModules);
+
+  // Merge permissions
+  roles.forEach(role => {
+    const config = RBAC_CONFIG[role] || { permissions: {} };
+    Object.entries(config.permissions).forEach(([module, actions]) => {
+      if (!merged.permissions[module]) {
+        merged.permissions[module] = [];
+      }
+      actions.forEach(action => {
+        if (!merged.permissions[module].includes(action)) {
+          merged.permissions[module].push(action);
+        }
+      });
+    });
+  });
+
+  // Handle wildcard permissions
+  if (merged.permissions['*']?.includes('*')) {
+    merged.allowedModules = ['*'];
+  }
+
+  return merged;
 };
 
 module.exports = fp(async function (fastify, options) {
@@ -45,14 +83,19 @@ module.exports = fp(async function (fastify, options) {
       const token = authHeader.split(' ')[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
       
-      // Verify user exists and is active
-      const { rows } = await fastify.pg.query(
-        `SELECT u.id, u.email, u.status, u.role_id, r.name as role_name
-         FROM users u
-         LEFT JOIN roles r ON u.role_id = r.id
-         WHERE u.id = $1`,
-        [decoded.id]
-      );
+      // Get user with all their roles
+      const { rows } = await fastify.pg.query(`
+        SELECT 
+          u.id, 
+          u.email, 
+          u.status,
+          ARRAY_REMOVE(ARRAY_AGG(r.name), NULL) as roles
+        FROM users u
+        LEFT JOIN user_roles ur ON u.id = ur.user_id
+        LEFT JOIN roles r ON ur.role_id = r.id
+        WHERE u.id = $1
+        GROUP BY u.id
+      `, [decoded.id]);
 
       if (rows.length === 0) {
         throw new Error('User not found');
@@ -64,20 +107,16 @@ module.exports = fp(async function (fastify, options) {
         throw new Error('User account is not active');
       }
 
-      // Get role configuration
-      const roleConfig = RBAC_CONFIG[user.role_name] || {
-        allowedModules: [],
-        permissions: {}
-      };
+      // Get merged permissions from all roles
+      const mergedPermissions = mergePermissions(user.roles || []);
 
       // Attach user to request with role information
       request.user = {
         id: user.id,
         email: user.email,
         status: user.status,
-        role_id: user.role_id,
-        role: user.role_name,
-        permissions: roleConfig
+        roles: user.roles,
+        permissions: mergedPermissions
       };
     } catch (error) {
       console.error('Authentication error:', error.message);
@@ -107,27 +146,32 @@ module.exports = fp(async function (fastify, options) {
         return;
       }
 
-      const { role, permissions } = request.user;
-      const [module, action = '*'] = requiredPermissions[0].split(':');
+      // For each required permission, check if user has it
+      for (const permission of requiredPermissions) {
+        const [module, action = '*'] = permission.split(':');
+        const { permissions } = request.user;
 
-      // Check if user's role has access to the module
-      const hasModuleAccess = permissions.allowedModules.includes('*') || 
-                             permissions.allowedModules.includes(module);
+        // Check if user's role has access to the module
+        const hasModuleAccess = 
+          permissions.allowedModules.includes('*') || 
+          permissions.allowedModules.includes(module);
 
-      // Check if user has the required permission
-      const hasPermission = permissions.permissions[module]?.includes('*') || 
-                          permissions.permissions[module]?.includes(action) ||
-                          permissions.permissions['*']?.includes('*');
+        // Check if user has the required permission
+        const hasPermission = 
+          permissions.permissions['*']?.includes('*') ||
+          permissions.permissions[module]?.includes('*') ||
+          permissions.permissions[module]?.includes(action);
 
-      if (!hasModuleAccess || !hasPermission) {
-        console.log(`Access denied for ${role} to ${requiredPermissions[0]}`);
-        reply.code(403).send({ 
-          statusCode: 403,
-          error: 'Forbidden',
-          message: 'Insufficient permissions to access this resource',
-          requiredPermission: requiredPermissions[0]
-        });
-        return;
+        if (!hasModuleAccess || !hasPermission) {
+          console.log(`Access denied for roles [${request.user.roles.join(', ')}] to ${permission}`);
+          reply.code(403).send({ 
+            statusCode: 403,
+            error: 'Forbidden',
+            message: 'Insufficient permissions to access this resource',
+            requiredPermission: permission
+          });
+          return;
+        }
       }
       
       done();

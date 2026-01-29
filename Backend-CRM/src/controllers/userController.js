@@ -6,8 +6,8 @@ const generateToken = (fastify, user) => {
   return fastify.jwt.sign(
     { 
       id: user.id, 
-      email: user.email, 
-      role_id: user.role_id 
+      email: user.email,
+      roles: user.roles || []  // Include all roles in the token
     },
     { 
       expiresIn: process.env.JWT_EXPIRES_IN || '1d' 
@@ -17,16 +17,12 @@ const generateToken = (fastify, user) => {
 
 // Register a new user
 exports.register = async (fastify, request) => {
-  const { full_name: fullName, email, role: roleName = 'User', status = 'active', regionIds = [] } = request.body;
+  const { full_name: fullName, email, roles = ['User'], status = 'active', regionIds = [] } = request.body;
   const password = 'Admin@123'; // Auto-generate default password
   
   // Validate required fields
   if (!fullName || !email) {
-    return reply.status(400).send({
-      statusCode: 400,
-      error: 'Bad Request',
-      message: 'Full name and email are required'
-    });
+    throw fastify.httpErrors.badRequest('Full name and email are required');
   }
 
   try {
@@ -37,82 +33,74 @@ exports.register = async (fastify, request) => {
     );
 
     if (existingUser) {
-      throw { 
-        statusCode: 400,
-        error: 'Bad Request',
-        message: 'Email already in use'
-      };
-    }
-
-    // Get role ID from role name
-    const { rows: [role] } = await fastify.pg.query(
-      'SELECT id FROM roles WHERE name = $1',
-      [roleName]
-    );
-
-    if (!role) {
-      throw {
-        statusCode: 400,
-        error: 'Bad Request',
-        message: 'Invalid role specified. Valid roles are: admin, user, etc.'
-      };
+      throw fastify.httpErrors.badRequest('Email already in use');
     }
 
     // Hash the password
     const hashedPassword = await bcrypt.hash(password, 10);
-    const userId = uuidv4();
-
+    
     // Start transaction
     const client = await fastify.pg.connect();
     try {
       await client.query('BEGIN');
       
-      // Insert user and get role name in the same query
+      // Insert user
       const { rows: [user] } = await client.query(
-        `WITH new_user AS (
-          INSERT INTO users (full_name, email, password_hash, role_id, status)
-          VALUES ($1, $2, $3, $4, $5)
-          RETURNING id, full_name, email, role_id, status, created_at
-        )
-        SELECT 
-          u.id, 
-          u.full_name, 
-          u.email, 
-          u.role_id,
-          r.name as role,
-          u.status, 
-          u.created_at
-        FROM new_user u
-        JOIN roles r ON u.role_id = r.id`,
-        [fullName, email, hashedPassword, role.id, status]
+        `INSERT INTO users (full_name, email, password_hash, status)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, full_name, email, status, created_at`,
+        [fullName, email, hashedPassword, status]
       );
 
-      // If regions are provided, add user-region associations
+      // Add roles to user_roles
+      if (roles && roles.length > 0) {
+        await client.query(
+          `INSERT INTO user_roles (user_id, role_id)
+           SELECT $1, r.id FROM roles r 
+           WHERE r.name = ANY($2::text[]) 
+           ON CONFLICT (user_id, role_id) DO NOTHING`,
+          [user.id, roles]
+        );
+      }
+
+      // Handle regions if needed
       if (regionIds && regionIds.length > 0) {
-        const values = regionIds.map((_, i) => `($${i * 2 + 6}, $${i * 2 + 7})`).join(',');
-        const params = regionIds.flatMap(regionId => [user.id, regionId]);
+        const regionValues = regionIds.map((_, i) => `($1, $${i + 2})`).join(',');
+        const regionParams = [user.id, ...regionIds];
         
         await client.query(
           `INSERT INTO user_regions (user_id, region_id) 
-           VALUES ${values}`,
-          params
+           VALUES ${regionValues}`,
+          regionParams
         );
       }
 
       await client.query('COMMIT');
-      
-      // Generate token
+
+      // Get user with roles
+      const { rows: [userWithRoles] } = await fastify.pg.query(`
+        SELECT 
+          u.*,
+          ARRAY_REMOVE(ARRAY_AGG(r.name), NULL) as roles
+        FROM users u
+        LEFT JOIN user_roles ur ON u.id = ur.user_id
+        LEFT JOIN roles r ON ur.role_id = r.id
+        WHERE u.id = $1
+        GROUP BY u.id
+      `, [user.id]);
+
+      // Generate token with all roles
       const token = generateToken(fastify, { 
-        id: user.id,
-        email: user.email,
-        role_id: user.role_id
+        id: userWithRoles.id,
+        email: userWithRoles.email,
+        roles: userWithRoles.roles
       });
 
-      // Return the user data with role from the query
+      // Remove sensitive data
+      const { password_hash, ...userWithoutPassword } = userWithRoles;
+
       return {
-        ...user,
-        role: user.role ,  // Role comes from the query
-        role_id: user.role_id,      // Role ID from the query
+        ...userWithoutPassword,
         token,
         temporaryPassword: 'Admin@123',
         note: 'Please change the default password on first login.'
@@ -125,7 +113,7 @@ exports.register = async (fastify, request) => {
     }
   } catch (error) {
     console.error('Registration error:', error);
-    throw error;  // Throw the error to be handled by the route
+    throw error;
   }
 };
 
@@ -134,13 +122,18 @@ exports.login = async (fastify, request, reply) => {
   const { email, password } = request.body;
   
   try {
-    // Find user by email with required fields
-    const { rows: [user] } = await fastify.pg.query(
-      `SELECT id, email, password_hash, role_id, full_name, status 
-       FROM users 
-       WHERE email = $1`,
-      [email]
-    );
+    // Find user by email with roles
+    const { rows: [user] } = await fastify.pg.query(`
+      SELECT 
+        u.*,
+        ARRAY_REMOVE(ARRAY_AGG(r.name), NULL) as roles
+      FROM users u
+      LEFT JOIN user_roles ur ON u.id = ur.user_id
+      LEFT JOIN roles r ON ur.role_id = r.id
+      WHERE u.email = $1
+      GROUP BY u.id
+    `, [email]);
+
     if (!user) {
       return reply.status(401).send({
         statusCode: 401,
@@ -159,14 +152,14 @@ exports.login = async (fastify, request, reply) => {
       });
     }
 
-    // Generate token
+    // Generate token with all roles
     const token = generateToken(fastify, {
       id: user.id,
       email: user.email,
-      role_id: user.role_id
+      roles: user.roles
     });
 
-    // Remove sensitive data from response
+    // Remove sensitive data
     const { password_hash, ...userWithoutPassword } = user;
 
     return reply.status(200).send({
@@ -186,7 +179,8 @@ exports.login = async (fastify, request, reply) => {
 };
 
 // Get all users (admin only)
-exports.getUsers = async (fastify, request, reply) => {
+// Get all users with their roles
+exports.getUsers = async (fastify, request) => {
   try {
     const { rows: users } = await fastify.pg.query(`
       SELECT 
@@ -196,7 +190,7 @@ exports.getUsers = async (fastify, request, reply) => {
         u.status, 
         u.created_at, 
         u.updated_at,
-        r.name as role,
+        ARRAY_REMOVE(ARRAY_AGG(DISTINCT r.name), NULL) as roles,
         COALESCE(
           (SELECT json_agg(reg.name) 
            FROM user_regions ur
@@ -205,38 +199,42 @@ exports.getUsers = async (fastify, request, reply) => {
           '[]'::json
         ) as regions
       FROM users u
-      LEFT JOIN roles r ON u.role_id = r.id
+      LEFT JOIN user_roles ur ON u.id = ur.user_id
+      LEFT JOIN roles r ON ur.role_id = r.id
+      GROUP BY u.id
       ORDER BY u.created_at DESC
     `);
     
     return users;
   } catch (error) {
     console.error('Get users error:', error);
-    return reply.status(500).send({
-      statusCode: 500,
-      error: 'Internal Server Error',
-      message: 'Failed to fetch users'
-    });
+    throw error;
   }
 };
 
 // Get user by ID (admin only)
+// Get user by ID with roles
 exports.getUser = async (fastify, request, reply) => {
   const { id } = request.params;
   
   try {
     const { rows: [user] } = await fastify.pg.query(`
       SELECT 
-        u.*, 
-        r.name as role_name,
-        array_agg(reg.name) as region_names,
-        array_agg(ur.region_id) as region_ids
+        u.*,
+        ARRAY_REMOVE(ARRAY_AGG(DISTINCT r.name), NULL) as roles,
+        COALESCE(
+          (SELECT json_agg(json_build_object('id', reg.id, 'name', reg.name))
+           FROM user_regions ur
+           JOIN regions reg ON ur.region_id = reg.id
+           WHERE ur.user_id = u.id
+           GROUP BY ur.user_id),
+          '[]'::json
+        ) as regions
       FROM users u
-      LEFT JOIN roles r ON u.role_id = r.id
-      LEFT JOIN user_regions ur ON u.id = ur.user_id
-      LEFT JOIN regions reg ON ur.region_id = reg.id
+      LEFT JOIN user_roles ur ON u.id = ur.user_id
+      LEFT JOIN roles r ON ur.role_id = r.id
       WHERE u.id = $1
-      GROUP BY u.id, r.id
+      GROUP BY u.id
     `, [id]);
 
     if (!user) {
@@ -248,15 +246,11 @@ exports.getUser = async (fastify, request, reply) => {
     }
 
     // Remove sensitive data
-    const { password: _, ...userWithoutPassword } = user;
+    const { password_hash, ...userWithoutPassword } = user;
     return userWithoutPassword;
   } catch (error) {
     console.error('Get user error:', error);
-    return reply.status(500).send({
-      statusCode: 500,
-      error: 'Internal Server Error',
-      message: 'Failed to fetch user'
-    });
+    throw error;
   }
 };
 

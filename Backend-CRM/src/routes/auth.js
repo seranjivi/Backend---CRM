@@ -1,6 +1,5 @@
 // backend/src/routes/auth.js
 const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
 
 module.exports = async function (fastify, options) {
   // Login endpoint
@@ -16,13 +15,22 @@ module.exports = async function (fastify, options) {
     }
 
     try {
-      // Find user by email with required fields
-      const { rows } = await fastify.pg.query(
-        `SELECT id, email, password_hash, role_id, full_name, status 
-         FROM users 
-         WHERE email = $1`,
-        [email]
-      );
+      // Find user by email with roles
+      const { rows } = await fastify.pg.query(`
+        SELECT 
+          u.id, 
+          u.full_name,
+          u.email, 
+          u.password_hash,
+          u.status,
+          ARRAY_REMOVE(ARRAY_AGG(r.name), NULL) as roles
+        FROM users u
+        LEFT JOIN user_roles ur ON u.id = ur.user_id
+        LEFT JOIN roles r ON ur.role_id = r.id
+        WHERE u.email = $1
+        GROUP BY u.id, u.full_name, u.email, u.password_hash, u.status
+      `, [email]);
+
       if (rows.length === 0) {
         return reply.status(401).send({
           statusCode: 401,
@@ -33,9 +41,7 @@ module.exports = async function (fastify, options) {
 
       const user = rows[0];
       
-      // Debug log the stored hash and input passwor
-      
-      // Use bcrypt to compare passwords
+      // Verify password
       const isPasswordValid = await bcrypt.compare(password, user.password_hash);      
       if (!isPasswordValid) {
         return reply.status(401).send({
@@ -58,27 +64,16 @@ module.exports = async function (fastify, options) {
       const tokenPayload = {
         id: user.id,
         email: user.email,
-        role_id: user.role_id  
-      };      
-      const token = jwt.sign(
+        roles: user.roles || []
+      };
+      
+      const token = fastify.jwt.sign(
         tokenPayload,
-        process.env.JWT_SECRET || 'your-secret-key',
         { expiresIn: '1d' }
       );
-      // Get role and permissions
-      const { rows: [role] } = await fastify.pg.query(
-        `SELECT r.name, r.permissions 
-         FROM roles r 
-         WHERE r.id = $1`,
-        [user.role_id]
-      );
 
-      // Prepare user data with role and permissions
-      const { password_hash, ...userData } = {
-        ...user,
-        role: role?.name,
-        permissions: role?.permissions || {}
-      };
+      // Remove sensitive data
+      const { password_hash, ...userData } = user;
       
       return {
         statusCode: 200,
@@ -88,7 +83,6 @@ module.exports = async function (fastify, options) {
           token
         }
       };
-
     } catch (error) {
       console.error('Login error:', error);
       return reply.status(500).send({
@@ -104,12 +98,11 @@ module.exports = async function (fastify, options) {
     preValidation: [fastify.authenticate] 
   }, async (request, reply) => {
     try {
-      const { rows } = await fastify.pg.query(
-        `SELECT 
+      const { rows } = await fastify.pg.query(`
+        SELECT 
           u.id, 
           u.full_name, 
           u.email, 
-          u.role, 
           u.status, 
           u.created_at, 
           u.updated_at,
@@ -117,13 +110,20 @@ module.exports = async function (fastify, options) {
             json_agg(
               json_build_object('id', r.id, 'name', r.name)
             ) FILTER (WHERE r.id IS NOT NULL), 
-            '[]'
-          ) as regions
-         FROM users u
-         LEFT JOIN user_regions ur ON u.id = ur.user_id
-         LEFT JOIN regions r ON ur.region_id = r.id
-         WHERE u.id = $1
-         GROUP BY u.id`,
+            '[]'::json
+          ) as regions,
+          COALESCE(
+            (SELECT ARRAY_AGG(r.name)
+             FROM user_roles ur
+             JOIN roles r ON ur.role_id = r.id
+             WHERE ur.user_id = u.id),
+            ARRAY[]::varchar[]
+          ) as roles
+        FROM users u
+        LEFT JOIN user_regions ur ON u.id = ur.user_id
+        LEFT JOIN regions r ON ur.region_id = r.id
+        WHERE u.id = $1
+        GROUP BY u.id`,
         [request.user.id]
       );
 
@@ -135,10 +135,13 @@ module.exports = async function (fastify, options) {
         });
       }
 
+      // Remove any sensitive data
+      const { password_hash, ...userData } = rows[0];
+
       return {
         statusCode: 200,
         message: 'User profile retrieved successfully',
-        data: rows[0]
+        data: userData
       };
     } catch (error) {
       console.error('Get current user error:', error);
