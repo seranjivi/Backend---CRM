@@ -333,6 +333,87 @@ const createRFP = async (fastify, request, reply) => {
   }
 };
 
+// Get RFP by ID
+const getRFPById = async (fastify, request, reply) => {
+  let client;
+  try {
+    const { id } = request.params;
+    client = await fastify.pg.connect();
+    
+    // Get RFP details
+    const rfpQuery = `
+      SELECT 
+        r.id,
+        r.title as "rfpTitle",
+        r.status as "rfpStatus",
+        r.rfp_type as "rfpType",
+        r.rfp_description as "rfpDescription",
+        r.solution_description as "solutionDescription",
+        r.submission_deadline as "submissionDeadline",
+        r.bid_manager as "bidManager",
+        r.submission_mode as "submissionMode",
+        r.portal_url as "portalUrl",
+        r.question_submission_date as "questionSubmissionDate",
+        r.response_submission_date as "responseSubmissionDate",
+        r.comments,
+        r.created_at as "createdAt",
+        r.updated_at as "updatedAt",
+        r.opportunity_id as "opportunityId",
+        o.opportunity_name as "opportunityName",
+        u.full_name as "createdBy",
+        u.email as "createdByEmail"
+      FROM rfps r
+      LEFT JOIN opportunities o ON r.opportunity_id = o.id
+      LEFT JOIN users u ON r.created_by = u.id
+      WHERE r.id = $1
+    `;
+    
+    const rfpResult = await client.query(rfpQuery, [id]);
+    
+    if (rfpResult.rows.length === 0) {
+      return reply.status(404).send({
+        success: false,
+        error: 'Not Found',
+        message: 'RFP not found'
+      });
+    }
+
+    const rfp = rfpResult.rows[0];
+
+    // Get associated documents
+    const documentsResult = await client.query(
+      `SELECT 
+        id, 
+        original_filename as "originalFilename",
+        stored_filename as "storedFilename",
+        mime_type as "mimeType",
+        document_type as "documentType",
+        size,
+        created_at as "createdAt"
+       FROM rfp_documents 
+       WHERE rfp_id = $1
+       ORDER BY created_at DESC`,
+      [id]
+    );
+
+    return {
+      success: true,
+      data: {
+        ...rfp,
+        documents: documentsResult.rows
+      }
+    };
+  } catch (error) {
+    console.error('Error fetching RFP by ID:', error);
+    reply.status(500).send({ 
+      success: false, 
+      error: 'Failed to fetch RFP',
+      message: error.message 
+    });
+  } finally {
+    if (client) client.release();
+  }
+};
 // Get all RFPs
 const getAllRFPs = async (fastify, request, reply) => {
   let client;
@@ -678,6 +759,7 @@ const deleteRFP = async (fastify, request, reply) => {
 
 module.exports = {
   createRFP,
+  getRFPById,
   getAllRFPs,
   handleRFPError,
   getRFPByOpportunityId, 

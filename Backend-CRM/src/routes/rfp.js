@@ -1,4 +1,4 @@
-const { createRFP, getAllRFPs, getRFPByOpportunityId, updateRFP, deleteRFP } = require('../controllers/rfpController');
+const { createRFP, getAllRFPs,getRFPById, getRFPByOpportunityId, updateRFP, deleteRFP } = require('../controllers/rfpController');
 
 module.exports = async function (fastify, options) {
   // Get all RFPs
@@ -8,6 +8,12 @@ module.exports = async function (fastify, options) {
       return getAllRFPs(fastify, request, reply);
     }
   });
+  fastify.get('/:id', {
+  preValidation: [fastify.authenticate],
+  handler: async (request, reply) => {
+    return getRFPById(fastify, request, reply);
+  }
+});
 
   // Create new RFP with file uploads
   fastify.post('/', {
