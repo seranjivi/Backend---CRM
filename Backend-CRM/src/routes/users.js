@@ -49,69 +49,71 @@ module.exports = async function (fastify, options) {
 });
 
   // Get user by ID (admin only or own profile)
-  fastify.get('/:id', { 
-    preValidation: [fastify.authenticate] 
-  }, async (request, reply) => {
-    try {
-      const { id } = request.params;
-      const isAdmin = request.user.role && request.user.role.toLowerCase() === 'admin';
-      
-      // Non-admin users can only view their own profile
-      if (!isAdmin && request.user.id !== id) {
-        return reply.status(403).send({ 
-          status: 'error',
-          message: 'You can only view your own profile',
-          error: 'Forbidden'
-        });
-      }
-
-      const { rows } = await fastify.pg.query(
-        `SELECT 
-          u.id, 
-          u.full_name, 
-          u.email, 
-          r.name as role, 
-          u.role_id,
-          u.status, 
-          u.created_at, 
-          u.updated_at,
-          COALESCE(
-            (
-              SELECT json_agg(reg.name) 
-              FROM user_regions ur2
-              JOIN regions reg ON ur2.region_id = reg.id
-              WHERE ur2.user_id = u.id
-            ), 
-            '[]'::json
-          ) as regions
-        FROM users u
-        LEFT JOIN roles r ON u.role_id = r.id
-        WHERE u.id = $1
-        GROUP BY u.id, r.name`,
-        [id]
-      );
-
-      if (rows.length === 0) {
-        return reply.status(404).send({ 
-          status: 'error',
-          message: 'User not found'
-        });
-      }
-
-      return {
-        data: rows[0],
-        status: 'success',
-        message: 'User retrieved successfully'
-      };
-    } catch (error) {
-      console.error('Get user by ID error:', error);
-      return reply.status(500).send({ 
+fastify.get('/:id', { 
+  preValidation: [fastify.authenticate] 
+}, async (request, reply) => {
+  try {
+    const { id } = request.params;
+    const userId = parseInt(id, 10);
+    
+    const userRoles = (request.user.roles || []).map(role => role.toLowerCase());
+    const isAdmin = userRoles.includes('admin');
+    
+    // Non-admin users can only view their own profile
+    if (!isAdmin && request.user.id !== userId) {
+      return reply.status(403).send({ 
         status: 'error',
-        message: 'Failed to fetch user',
-        error: error.message
+        message: 'You can only view your own profile',
+        error: 'Forbidden'
       });
     }
-  });
+
+    const { rows } = await fastify.pg.query(`
+      SELECT 
+        u.id, 
+        u.full_name, 
+        u.email, 
+        u.status, 
+        u.created_at, 
+        u.updated_at,
+        ARRAY_REMOVE(ARRAY_AGG(DISTINCT r.name), NULL) as roles,
+        COALESCE(
+          (
+            SELECT json_agg(reg.name) 
+            FROM user_regions ur2
+            JOIN regions reg ON ur2.region_id = reg.id
+            WHERE ur2.user_id = u.id
+          ), 
+          '[]'::json
+        ) as regions
+      FROM users u
+      LEFT JOIN user_roles ur ON u.id = ur.user_id
+      LEFT JOIN roles r ON ur.role_id = r.id
+      WHERE u.id = $1
+      GROUP BY u.id
+    `, [userId]);
+
+    if (rows.length === 0) {
+      return reply.status(404).send({ 
+        status: 'error',
+        message: 'User not found'
+      });
+    }
+
+    return {
+      data: rows[0],
+      status: 'success',
+      message: 'User retrieved successfully'
+    };
+  } catch (error) {
+    console.error('Get user error:', error);
+    return reply.status(500).send({ 
+      status: 'error',
+      message: 'Failed to fetch user',
+      error: error.message
+    });
+  }
+});
 
   // Create user (admin only)
   fastify.post('/', {
