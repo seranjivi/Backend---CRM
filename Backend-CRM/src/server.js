@@ -1,7 +1,7 @@
 // backend/src/server.js
 require('dotenv').config();
 
-const fastify = require('fastify')({ 
+const fastify = require('fastify')({
   logger: {
     level: 'info',
     transport: {
@@ -62,8 +62,10 @@ fastify.register(require('./routes/regions'), { prefix: '/api/regions' });
 fastify.register(require('./routes/roles'), { prefix: '/api/roles' });
 fastify.register(require('./routes/opportunities'), { prefix: '/api/opportunities' });
 fastify.register(require('./routes/rfp'), { prefix: '/api/rfps' });
-fastify.register(require('./routes/client'), { prefix: '/api/client' });  
+fastify.register(require('./routes/client'), { prefix: '/api/client' });
 fastify.register(require('./routes/dashboardRoutes'), { prefix: '/api' });
+fastify.register(require('./routes/salesPerformanceRoutes'), { prefix: '/api' });
+
 fastify.register(require('./routes/sow'), { prefix: '/api/sows' });
 fastify.register(require('./routes/countries'), { prefix: '/api/countries' });
 
@@ -73,17 +75,17 @@ fastify.get('/health', async () => {
     const client = await fastify.pg.connect();
     try {
       await client.query('SELECT NOW()');
-      return { 
-        status: 'ok', 
+      return {
+        status: 'ok',
         database: 'connected',
-        timestamp: new Date().toISOString() 
+        timestamp: new Date().toISOString()
       };
     } finally {
       client.release();
     }
   } catch (error) {
     console.error('Health check failed:', error);
-    return { 
+    return {
       status: 'error',
       database: 'disconnected',
       error: error.message,
@@ -94,7 +96,7 @@ fastify.get('/health', async () => {
 
 // Root endpoint
 fastify.get('/', async () => {
-  return { 
+  return {
     name: 'CRM API',
     version: '1.0.0',
     status: 'running',
@@ -107,9 +109,9 @@ const start = async () => {
   try {
     const port = parseInt(process.env.PORT || '5000');
     const host = process.env.HOST || '0.0.0.0';
-    
+
     await fastify.listen({ port, host });
-    
+
   } catch (err) {
     console.error('Server error:', err);
     process.exit(1);
