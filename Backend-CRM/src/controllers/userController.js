@@ -179,7 +179,6 @@ exports.login = async (fastify, request, reply) => {
 };
 
 // Get all users (admin only)
-// Get all users with their roles
 exports.getUsers = async (fastify, request) => {
   try {
     const { rows: users } = await fastify.pg.query(`
@@ -201,14 +200,23 @@ exports.getUsers = async (fastify, request) => {
       FROM users u
       LEFT JOIN user_roles ur ON u.id = ur.user_id
       LEFT JOIN roles r ON ur.role_id = r.id
-      GROUP BY u.id
+      GROUP BY u.id, u.full_name, u.email, u.status, u.created_at, u.updated_at
       ORDER BY u.created_at DESC
     `);
-    
-    return users;
+
+    return {
+      status: 'success',
+      results: users.length,
+      data: {
+        users: users.map(user => ({
+          ...user,
+          roles: user.roles || []
+        }))
+      }
+    };
   } catch (error) {
-    console.error('Get users error:', error);
-    throw error;
+    console.error('Error fetching users:', error);
+    throw new Error('Failed to fetch users: ' + error.message);
   }
 };
 

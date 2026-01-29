@@ -5,47 +5,48 @@ const { createUserSchema } = require('../schemas/user.schema');
 module.exports = async function (fastify, options) {
   // Get all users (admin only)
   fastify.get('/', { 
-    preValidation: [fastify.authenticate, fastify.authorize(['admin'])] 
-  }, async (request, reply) => {
-    try {
-      const { rows } = await fastify.pg.query(`
-        SELECT 
-          u.id, 
-          u.full_name, 
-          u.email, 
-          r.name as role, 
-          u.status, 
-          u.created_at, 
-          u.updated_at,
-          COALESCE(
-            (
-              SELECT json_agg(reg.name) 
-              FROM user_regions ur2
-              JOIN regions reg ON ur2.region_id = reg.id
-              WHERE ur2.user_id = u.id
-            ), 
-            '[]'::json
-          ) as regions
-        FROM users u
-        LEFT JOIN roles r ON u.role_id = r.id
-        GROUP BY u.id, r.name
-        ORDER BY u.created_at DESC
-      `);
-      
-      return {
-        data: rows,
-        status: 'success',
-        message: 'Users retrieved successfully'
-      };
-    } catch (error) {
-      console.error('Get users error:', error);
-      return reply.status(500).send({ 
-        status: 'error',
-        message: 'Failed to fetch users',
-        error: error.message
-      });
-    }
-  });
+  preValidation: [fastify.authenticate, fastify.authorize(['admin'])] 
+}, async (request, reply) => {
+  try {
+    const { rows } = await fastify.pg.query(`
+      SELECT 
+        u.id, 
+        u.full_name, 
+        u.email, 
+        u.status, 
+        u.created_at, 
+        u.updated_at,
+        ARRAY_REMOVE(ARRAY_AGG(DISTINCT r.name), NULL) as roles,
+        COALESCE(
+          (
+            SELECT json_agg(reg.name) 
+            FROM user_regions ur2
+            JOIN regions reg ON ur2.region_id = reg.id
+            WHERE ur2.user_id = u.id
+          ), 
+          '[]'::json
+        ) as regions
+      FROM users u
+      LEFT JOIN user_roles ur ON u.id = ur.user_id
+      LEFT JOIN roles r ON ur.role_id = r.id
+      GROUP BY u.id
+      ORDER BY u.created_at DESC
+    `);
+    
+    return {
+      data: rows,
+      status: 'success',
+      message: 'Users retrieved successfully'
+    };
+  } catch (error) {
+    console.error('Get users error:', error);
+    return reply.status(500).send({ 
+      status: 'error',
+      message: 'Failed to fetch users',
+      error: error.message
+    });
+  }
+});
 
   // Get user by ID (admin only or own profile)
   fastify.get('/:id', { 
