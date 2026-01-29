@@ -181,118 +181,146 @@ fastify.get('/:id', {
   });
 
   // Update user (admin only or own profile)
-  fastify.put('/:id', {
-    preValidation: [fastify.authenticate]
-  }, async (request, reply) => {
-    const { id } = request.params;
-    const { full_name, email, role_id, status, regions } = request.body;
-    const isAdmin = request.user.role && request.user.role.toLowerCase() === 'admin';
+fastify.put('/:id', {
+  preValidation: [fastify.authenticate]
+}, async (request, reply) => {
+  const { id } = request.params;
+  const { full_name, email, roles, status, regions } = request.body;
+  const userId = parseInt(id, 10);
+  
+  const userRoles = (request.user.roles || []).map(r => r.toLowerCase());
+  const isAdmin = userRoles.includes('admin');
 
-    // Non-admin users can only update their own profile and can't change role/status
-    if (!isAdmin) {
-      if (request.user.id !== id) {
-        return reply.status(403).send({ 
-          status: 'error',
-          message: 'You can only update your own profile',
-          error: 'Forbidden'
-        });
-      }
-      
-      // Non-admins can't update these fields
-      if (role_id || status) {
-        return reply.status(403).send({
-          status: 'error',
-          message: 'You are not authorized to update role or status',
-          error: 'Forbidden'
-        });
-      }
-    }
-
-    const client = await fastify.pg.connect();
-    try {
-      await client.query('BEGIN');
-
-      // Update user details
-      const { rows: [updatedUser] } = await client.query(
-        `UPDATE users 
-         SET full_name = COALESCE($1, full_name),
-             email = COALESCE($2, email),
-             role_id = COALESCE($3, role_id),
-             status = COALESCE($4, status),
-             updated_at = NOW()
-         WHERE id = $5
-         RETURNING id, full_name, email, status, created_at, updated_at, role_id`,
-        [full_name, email, role_id, status, id]
-      );
-
-      if (!updatedUser) {
-        await client.query('ROLLBACK');
-        return reply.status(404).send({ 
-          status: 'error',
-          message: 'User not found' 
-        });
-      }
-
-      // Update user regions if provided and user is admin
-      if (Array.isArray(regions) && isAdmin) {
-        // Delete existing regions
-        await client.query('DELETE FROM user_regions WHERE user_id = $1', [id]);
-        
-        // Insert new regions if any
-        if (regions.length > 0) {
-          const values = regions.map((regionId, index) => 
-            `($${index * 2 + 1}, $${index * 2 + 2})`
-          ).join(',');
-          
-          const params = [];
-          regions.forEach(regionId => {
-            params.push(id, regionId);
-          });
-          
-          await client.query(
-            `INSERT INTO user_regions (user_id, region_id) VALUES ${values}`,
-            params
-          );
-        }
-      }
-
-      await client.query('COMMIT');
-      
-      // Get updated user with regions
-      const { rows: [userWithRegions] } = await fastify.pg.query(
-        `SELECT 
-          u.*, 
-          r.name as role,
-          COALESCE(
-            (SELECT json_agg(reg.name) 
-             FROM user_regions ur
-             JOIN regions reg ON ur.region_id = reg.id
-             WHERE ur.user_id = u.id),
-            '[]'::json
-          ) as regions
-         FROM users u
-         LEFT JOIN roles r ON u.role_id = r.id
-         WHERE u.id = $1`,
-        [id]
-      );
-
-      return {
-        data: userWithRegions,
-        status: 'success',
-        message: 'User updated successfully'
-      };
-    } catch (error) {
-      await client.query('ROLLBACK');
-      console.error('Update user error:', error);
-      return reply.status(500).send({ 
+  // Non-admin users can only update their own profile and can't change roles/status
+  if (!isAdmin) {
+    if (request.user.id !== userId) {
+      return reply.status(403).send({ 
         status: 'error',
-        message: 'Failed to update user',
-        error: error.message
+        message: 'You can only update your own profile',
+        error: 'Forbidden'
       });
-    } finally {
-      client.release();
     }
-  });
+    
+    // Non-admins can't update these fields
+    if (roles || status) {
+      return reply.status(403).send({
+        status: 'error',
+        message: 'You are not authorized to update roles or status',
+        error: 'Forbidden'
+      });
+    }
+  }
+
+  const client = await fastify.pg.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Update user details
+    const { rows: [updatedUser] } = await client.query(
+      `UPDATE users 
+       SET full_name = COALESCE($1, full_name),
+           email = COALESCE($2, email),
+           status = COALESCE($3, status),
+           updated_at = NOW()
+       WHERE id = $4
+       RETURNING id, full_name, email, status, created_at, updated_at`,
+      [full_name, email, status, userId]
+    );
+
+    if (!updatedUser) {
+      await client.query('ROLLBACK');
+      return reply.status(404).send({ 
+        status: 'error',
+        message: 'User not found' 
+      });
+    }
+
+    // Update user roles if provided and user is admin
+    if (Array.isArray(roles) && isAdmin) {
+      // Delete existing roles
+      await client.query('DELETE FROM user_roles WHERE user_id = $1', [userId]);
+      
+      // Insert new roles if any
+      if (roles.length > 0) {
+        const roleValues = roles.map((_, i) => 
+          `($${i * 2 + 1}, (SELECT id FROM roles WHERE name = $${i * 2 + 2} LIMIT 1))`
+        ).join(',');
+        
+        const roleParams = [];
+        roles.forEach(roleName => {
+          roleParams.push(userId, roleName);
+        });
+        
+        await client.query(
+          `INSERT INTO user_roles (user_id, role_id) 
+           VALUES ${roleValues} 
+           ON CONFLICT (user_id, role_id) DO NOTHING`,
+          roleParams
+        );
+      }
+    }
+
+    // Update user regions if provided and user is admin
+    if (Array.isArray(regions) && isAdmin) {
+      // Delete existing regions
+      await client.query('DELETE FROM user_regions WHERE user_id = $1', [userId]);
+      
+      // Insert new regions if any
+      if (regions.length > 0) {
+        const regionValues = regions.map((_, i) => 
+          `($${i * 2 + 1}, $${i * 2 + 2})`
+        ).join(',');
+        
+        const regionParams = [];
+        regions.forEach(regionId => {
+          regionParams.push(userId, regionId);
+        });
+        
+        await client.query(
+          `INSERT INTO user_regions (user_id, region_id) VALUES ${regionValues}`,
+          regionParams
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    
+    // Get updated user with roles and regions
+    const { rows: [userWithDetails] } = await fastify.pg.query(`
+      SELECT 
+        u.*,
+        ARRAY_REMOVE(ARRAY_AGG(DISTINCT r.name), NULL) as roles,
+        COALESCE(
+          (SELECT json_agg(reg.name) 
+           FROM user_regions ur
+           JOIN regions reg ON ur.region_id = reg.id
+           WHERE ur.user_id = u.id),
+          '[]'::json
+        ) as regions
+      FROM users u
+      LEFT JOIN user_roles ur ON u.id = ur.user_id
+      LEFT JOIN roles r ON ur.role_id = r.id
+      WHERE u.id = $1
+      GROUP BY u.id
+    `, [userId]);
+
+    return {
+      data: userWithDetails,
+      status: 'success',
+      message: 'User updated successfully'
+    };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Update user error:', error);
+    return reply.status(500).send({ 
+      status: 'error',
+      message: 'Failed to update user',
+      error: error.message
+    });
+  } finally {
+    client.release();
+  }
+});
 
   // Delete user (admin only)
   fastify.delete('/:id', {
