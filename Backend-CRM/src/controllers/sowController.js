@@ -496,10 +496,172 @@ const getSOWById = async (request, reply) => {
         }
     }
 };
+// Add this function in sowController.js
+const updateSOW = async (request, reply) => {
+    const client = await getClient();
+    const { id } = request.params;
+
+    try {
+        await client.query('BEGIN');
+        const uploadsDir = await ensureUploadsDir();
+        const parts = request.parts();
+        const files = [];
+        let fields = {};
+
+        // Process multipart form data
+        for await (const part of parts) {
+            if (part.file) {
+                const filename = `${uuidv4()}${path.extname(part.filename)}`;
+                const filepath = path.join(uploadsDir, filename);
+                
+                await fs.writeFile(filepath, await part.toBuffer());
+                
+                files.push({
+                    original_filename: part.filename,
+                    stored_filename: filename,
+                    mime_type: part.mimetype,
+                    size: part.file.bytesRead
+                });
+            } else {
+                const fieldMap = {
+                    'sow_title': 'sow_title',
+                    'opportunity_id': 'opportunity_id',
+                    'rfb_id': 'rfb_id',
+                    'user_id': 'user_id',
+                    'status': 'status',
+                    'release_version': 'release_version',
+                    'contract_currency': 'contract_currency',
+                    'contract_value': 'contract_value',
+                    'targetKickoffDate': 'target_kickoff_date',
+                    'linkedProposalRef': 'linked_proposal_reference',
+                    'scopeOverview': 'scope_overview'
+                };
+
+                const dbField = fieldMap[part.fieldname];
+                if (dbField) {
+                    fields[dbField] = part.value;
+                }
+            }
+        }
+
+        // Build the update query
+        const updateFields = [];
+        const values = [];
+        let paramCount = 1;
+
+        const updateableFields = [
+            'sow_title', 'status', 'release_version', 'contract_currency',
+            'contract_value', 'target_kickoff_date', 'linked_proposal_reference',
+            'scope_overview', 'opportunity_id', 'rfb_id', 'user_id'
+        ];
+
+        for (const [key, value] of Object.entries(fields)) {
+            if (updateableFields.includes(key) && value !== undefined) {
+                updateFields.push(`${key} = $${paramCount}`);
+                values.push(value);
+                paramCount++;
+            }
+        }
+
+        if (updateFields.length === 0) {
+            throw new Error('No valid fields provided for update');
+        }
+
+        updateFields.push(`updated_at = NOW()`);
+        values.push(id);
+        const whereClause = `WHERE sow_id = $${paramCount}`;
+
+        const updateQuery = `
+            UPDATE sows 
+            SET ${updateFields.join(', ')}
+            ${whereClause}
+            RETURNING *
+        `;
+
+        const result = await client.query(updateQuery, values);
+        
+        if (result.rowCount === 0) {
+            return reply.status(404).send({
+                success: false,
+                error: 'Not Found',
+                message: 'SOW not found'
+            });
+        }
+
+        // Handle document uploads
+        if (files.length > 0) {
+            for (const file of files) {
+                await client.query(
+                    `INSERT INTO sow_documents (
+                        sow_id,
+                        original_filename,
+                        stored_filename,
+                        mime_type,
+                        size,
+                        uploaded_by
+                    ) VALUES ($1, $2, $3, $4, $5, $6)`,
+                    [
+                        id,
+                        file.original_filename,
+                        file.stored_filename,
+                        file.mime_type,
+                        file.size,
+                        fields.user_id || null
+                    ]
+                );
+            }
+        }
+
+        await client.query('COMMIT');
+        
+        // Get the updated SOW with its documents
+        const { rows } = await client.query(`
+            SELECT s.*, 
+                   (SELECT json_agg(json_build_object(
+                       'id', d.id,
+                       'original_filename', d.original_filename,
+                       'mime_type', d.mime_type,
+                       'size', d.size,
+                       'created_at', d.created_at
+                   )) FILTER (WHERE d.id IS NOT NULL) 
+                   FROM sow_documents d 
+                   WHERE d.sow_id = s.sow_id) as documents
+            FROM sows s
+            WHERE s.sow_id = $1
+        `, [id]);
+        
+        const updatedSOW = rows[0];
+        if (!updatedSOW) {
+            throw new Error('Failed to retrieve updated SOW');
+        }
+
+        return {
+            success: true,
+            message: 'SOW updated successfully',
+            data: updatedSOW
+        };
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Error updating SOW:', error);
+        return reply.status(500).send({
+            success: false,
+            error: 'Failed to update SOW',
+            message: error.message
+        });
+    } finally {
+        try {
+            client.release();
+        } catch (releaseError) {
+            console.error('Error releasing client:', releaseError);
+        }
+    }
+};
 
 module.exports = {
     createSOW,
     getSOWById,
     listSOWs,
-    deleteSOW
+    deleteSOW,
+    updateSOW
 };

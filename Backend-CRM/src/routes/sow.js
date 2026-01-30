@@ -86,31 +86,51 @@ async function sowRoutes(fastify, options) {
 }, listSOWs);
 
     // Update SOW
-    // fastify.put('/:id', {
-    //     schema: {
-    //         params: {
-    //             type: 'object',
-    //             properties: {
-    //                 id: { type: 'integer' }
-    //             },
-    //             required: ['id']
-    //         },
-    //         body: {
-    //             type: 'object',
-    //             properties: {
-    //                 sow_title: { type: 'string', minLength: 1, maxLength: 255 },
-    //                 release_version: { type: 'string', maxLength: 50 },
-    //                 contract_currency: { type: 'string', maxLength: 3 },
-    //                 contract_value: { type: 'number', minimum: 0 },
-    //                 target_kickoff_date: { type: 'string', format: 'date' },
-    //                 linked_proposal_reference: { type: 'string', maxLength: 255 },
-    //                 scope_overview: { type: 'string' }
-    //             },
-    //             minProperties: 1
-    //         }
-    //     },
-    //     preValidation: [fastify.authenticate]
-    // }, updateSOW);
+// Add this route in sow.js
+fastify.put('/:id', {
+    schema: {
+        params: {
+            type: 'object',
+            properties: {
+                id: { type: 'integer' }
+            },
+            required: ['id']
+        },
+        consumes: ['multipart/form-data'],
+        response: {
+            200: {
+                type: 'object',
+                properties: {
+                    success: { type: 'boolean' },
+                    message: { type: 'string' },
+                    data: { 
+                        type: 'object',
+                        properties: {
+                            sow_id: { type: 'integer' },
+                            sow_title: { type: 'string' },
+                            status: { type: 'string' },
+                            documents: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        id: { type: 'integer' },
+                                        original_filename: { type: 'string' },
+                                        mime_type: { type: 'string' },
+                                        size: { type: 'integer' },
+                                        created_at: { type: 'string', format: 'date-time' }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    preValidation: [fastify.authenticate],
+    handler: updateSOW
+});
 }
 
 module.exports = sowRoutes;
