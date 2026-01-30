@@ -395,12 +395,93 @@ const deleteSOW = async (request, reply) => {
             message: error.message
         });
     } finally {
-        client.release();
+        try {
+            client.release();
+        } catch (releaseError) {
+            console.error('Error releasing client:', releaseError);
+        }
+    }
+};
+
+// Get SOW by ID
+const getSOWById = async (request, reply) => {
+    const client = await getClient();
+    try {
+        const { id } = request.params;
+        
+        // Get SOW details
+        const sowQuery = `
+            SELECT 
+                s.*,
+                o.opportunity_name,
+                o.client_name,
+                o.amount as opportunity_value,
+                o.close_date as expected_close_date,
+                u.full_name as owner_name,
+                u.email as owner_email,
+                (
+                    SELECT json_agg(json_build_object(
+                        'id', d.id,
+                        'original_filename', d.original_filename,
+                        'stored_filename', d.stored_filename,
+                        'mime_type', d.mime_type,
+                        'size', d.size,
+                        'created_at', d.created_at
+                    ))
+                    FROM sow_documents d
+                    WHERE d.sow_id = s.sow_id
+                ) as documents
+            FROM sows s
+            LEFT JOIN opportunities o ON s.opportunity_id = o.id
+            LEFT JOIN users u ON s.user_id = u.id
+            WHERE s.sow_id = $1
+        `;
+        
+        const result = await client.query(sowQuery, [id]);
+        
+        if (result.rows.length === 0) {
+            return reply.status(404).send({
+                success: false,
+                error: 'Not Found',
+                message: 'SOW not found'
+            });
+        }
+
+        const sow = result.rows[0];
+        
+        // Parse the documents JSON if it exists
+        if (sow.documents) {
+            sow.documents = sow.documents.map(doc => ({
+                ...doc,
+                download_url: `/api/sows/documents/${doc.stored_filename}`
+            }));
+        } else {
+            sow.documents = [];
+        }
+
+        return {
+            success: true,
+            data: sow
+        };
+    } catch (error) {
+        console.error('Error fetching SOW by ID:', error);
+        return reply.status(500).send({
+            success: false,
+            error: 'Failed to fetch SOW',
+            message: error.message
+        });
+    } finally {
+        try {
+            client.release();
+        } catch (releaseError) {
+            console.error('Error releasing client:', releaseError);
+        }
     }
 };
 
 module.exports = {
     createSOW,
+    getSOWById,
     listSOWs,
     deleteSOW
 };

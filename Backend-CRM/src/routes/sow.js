@@ -29,18 +29,19 @@ async function sowRoutes(fastify, options) {
     }, createSOW);
 
     // Get SOW by ID
-    // fastify.get('/:id', {
-    //     schema: {
-    //         params: {
-    //             type: 'object',
-    //             properties: {
-    //                 id: { type: 'integer' }
-    //             },
-    //             required: ['id']
-    //         }
-    //     },
-    //     preValidation: [fastify.authenticate]
-    // }, getSOWById);
+    fastify.get('/:id', {
+        schema: {
+            params: {
+                type: 'object',
+                properties: {
+                    id: { type: 'integer' }
+                },
+                required: ['id']
+            }
+        },
+        preValidation: [fastify.authenticate],
+        handler: getSOWById
+    });
 
     // Get SOWs by Opportunity
     // fastify.get('/opportunity/:opportunityId', {
