@@ -55,7 +55,25 @@ const createSOW = async (request, reply) => {
             } else {
                 // Handle form fields
                 console.log(`Processing field: ${part.fieldname} = ${part.value}`);
-                fields[part.fieldname] = part.value;
+                
+                // Map request fields to database fields
+                const fieldMap = {
+                    'targetKickoffDate': 'target_kickoff_date',
+                    'linkedProposalRef': 'linked_proposal_reference',
+                    'scopeOverview': 'scope_overview',
+                    'contractValue': 'contract_value',
+                    'currency': 'contract_currency',
+                    'status': 'status',
+                    'sow_title': 'sow_title',
+                    'opportunity_id': 'opportunity_id',
+                    'rfb_id': 'rfb_id',
+                    'user_id': 'user_id'
+                };
+                
+                const dbField = fieldMap[part.fieldname];
+                if (dbField) {
+                    fields[dbField] = part.value;
+                }
             }
         }
 
