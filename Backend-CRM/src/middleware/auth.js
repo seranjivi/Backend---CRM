@@ -12,17 +12,19 @@ const RBAC_CONFIG = {
     }
   },
   'Presales Lead': {
-    allowedModules: ['clients', 'opportunities'],
+    allowedModules: ['clients', 'opportunities', 'users'],
     permissions: {
       clients: ['read', 'write'],
-      opportunities: ['read']
+      opportunities: ['read'],
+      users: ['read']
     }
   },
   'Sales Head': {
-    allowedModules: ['clients'],
+    allowedModules: ['clients', 'users'],
     permissions: {
       clients: ['read', 'write'],
-      opportunities: []
+      opportunities: [],
+      users: ['read']
     }
   },
   'Admin': {
@@ -40,17 +42,23 @@ const mergePermissions = (roles) => {
     permissions: {}
   };
 
+  // Convert RBAC_CONFIG keys to lowercase for case-insensitive lookup
+  const normalizedRBAC = Object.keys(RBAC_CONFIG).reduce((acc, key) => {
+    acc[key.toLowerCase()] = RBAC_CONFIG[key];
+    return acc;
+  }, {});
+
   // Get unique modules from all roles
   const allModules = new Set();
   roles.forEach(role => {
-    const config = RBAC_CONFIG[role] || { allowedModules: [] };
+    const config = normalizedRBAC[role.toLowerCase()] || { allowedModules: [] };
     config.allowedModules.forEach(module => allModules.add(module));
   });
   merged.allowedModules = Array.from(allModules);
 
   // Merge permissions
   roles.forEach(role => {
-    const config = RBAC_CONFIG[role] || { permissions: {} };
+    const config = normalizedRBAC[role.toLowerCase()] || { permissions: {} };
     Object.entries(config.permissions).forEach(([module, actions]) => {
       if (!merged.permissions[module]) {
         merged.permissions[module] = [];
@@ -82,7 +90,7 @@ module.exports = fp(async function (fastify, options) {
 
       const token = authHeader.split(' ')[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-      
+
       // Get user with all their roles
       const { rows } = await fastify.pg.query(`
         SELECT 
@@ -120,7 +128,7 @@ module.exports = fp(async function (fastify, options) {
       };
     } catch (error) {
       console.error('Authentication error:', error.message);
-      reply.code(401).send({ 
+      reply.code(401).send({
         statusCode: 401,
         error: 'Unauthorized',
         message: error.message || 'Invalid or expired token'
@@ -132,10 +140,10 @@ module.exports = fp(async function (fastify, options) {
   fastify.decorate('authorize', function (requiredPermissions = []) {
     return function (request, reply, done) {
       if (!request.user) {
-        reply.code(401).send({ 
+        reply.code(401).send({
           statusCode: 401,
           error: 'Unauthorized',
-          message: 'Authentication required' 
+          message: 'Authentication required'
         });
         return;
       }
@@ -152,19 +160,19 @@ module.exports = fp(async function (fastify, options) {
         const { permissions } = request.user;
 
         // Check if user's role has access to the module
-        const hasModuleAccess = 
-          permissions.allowedModules.includes('*') || 
+        const hasModuleAccess =
+          permissions.allowedModules.includes('*') ||
           permissions.allowedModules.includes(module);
 
         // Check if user has the required permission
-        const hasPermission = 
+        const hasPermission =
           permissions.permissions['*']?.includes('*') ||
           permissions.permissions[module]?.includes('*') ||
           permissions.permissions[module]?.includes(action);
 
         if (!hasModuleAccess || !hasPermission) {
           console.log(`Access denied for roles [${request.user.roles.join(', ')}] to ${permission}`);
-          reply.code(403).send({ 
+          reply.code(403).send({
             statusCode: 403,
             error: 'Forbidden',
             message: 'Insufficient permissions to access this resource',
@@ -173,7 +181,7 @@ module.exports = fp(async function (fastify, options) {
           return;
         }
       }
-      
+
       done();
     };
   });
