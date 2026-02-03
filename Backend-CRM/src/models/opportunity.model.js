@@ -125,7 +125,8 @@ const Opportunity = (fastify) => ({
         sales_owner = null,
         technical_poc = null,
         presales_poc = null,
-        start_date = null
+        start_date = null,
+        response_submitted_date = null
       } = opportunityData;
 
  
@@ -137,9 +138,10 @@ const Opportunity = (fastify) => ({
       opportunity_name, client_name, close_date, amount_currency, amount,
       opportunity_type, lead_source, triaged_status, pipeline_status,
       win_probability, user_id, role_id, approval_stage,
-      start_date, sales_owner, technical_poc, presales_poc, next_steps
+      start_date, sales_owner, technical_poc, presales_poc, next_steps,
+      response_submitted_date
     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'LEVEL_1_RFB', 
-             $13, $14, $15, $16, $17) 
+             $13, $14, $15, $16, $17, $18) 
     RETURNING *
   `,
   values: [
@@ -159,7 +161,8 @@ const Opportunity = (fastify) => ({
     opportunityData.sales_owner || null,        
     opportunityData.technical_poc || null,      
     opportunityData.presales_poc || null,
-    opportunityData.next_steps || null
+    opportunityData.next_steps || null,
+    opportunityData.response_submitted_date ? new Date(opportunityData.response_submitted_date).toISOString() : null
   ]
 };
 
@@ -211,12 +214,12 @@ const Opportunity = (fastify) => ({
       pipeline_status,
       win_probability,
       user_id,
-      role_id,
+      next_steps,
       start_date,
       sales_owner,
       technical_poc,
       presales_poc,
-      next_steps
+      response_submitted_date,
     } = opportunityData;
 
     try {
@@ -239,8 +242,9 @@ const Opportunity = (fastify) => ({
           technical_poc = COALESCE($15, technical_poc),
           presales_poc = COALESCE($16, presales_poc),
           next_steps = COALESCE($17, next_steps),
+          response_submitted_date = COALESCE($18, response_submitted_date),
           updated_at = NOW()
-        WHERE id = $18
+        WHERE id = $19
         RETURNING *`,
         [
           opportunity_name,
@@ -260,6 +264,7 @@ const Opportunity = (fastify) => ({
           technical_poc,
           presales_poc,
           next_steps,
+          response_submitted_date ? new Date(response_submitted_date).toISOString() : null,
           id
         ]
       );

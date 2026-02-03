@@ -113,6 +113,8 @@ const createRFP = async (fastify, request, reply) => {
     question_submission_date: null,
     response_submission_date: null,
     comments: null,
+    amount: null,
+    currency: null,
     documents: {
       commercial: [],
       proposal: [],
@@ -170,7 +172,9 @@ const createRFP = async (fastify, request, reply) => {
               'portalUrl': 'portal_url',
               'questionSubmissionDate': 'question_submission_date',
               'responseSubmissionDate': 'response_submission_date',
-              'opportunityId': 'opportunity_id'
+              'opportunityId': 'opportunity_id',
+              'amount': 'amount',
+              'currency': 'currency'
             };
             
             const dbField = dbFieldMap[part.fieldname] || part.fieldname;
@@ -183,7 +187,9 @@ const createRFP = async (fastify, request, reply) => {
       fields = { 
         ...fields, 
         ...request.body,
-        rfp_status: request.body.rfpStatus || request.body.rfp_status || 'Draft'
+        rfp_status: request.body.rfpStatus || request.body.rfp_status || 'Draft',
+        amount: request.body.amount,
+        currency: request.body.currency
       };
     }
 
@@ -208,8 +214,10 @@ const createRFP = async (fastify, request, reply) => {
         response_submission_date,
         comments,
         created_by,
-        opportunity_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) 
+        opportunity_id,
+        amount,
+        currency
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) 
       RETURNING *`,
       [
         fields.title || '',
@@ -225,7 +233,9 @@ const createRFP = async (fastify, request, reply) => {
         fields.response_submission_date ? new Date(fields.response_submission_date) : null,
         fields.comments,
         request.user?.id,
-        fields.opportunity_id
+        fields.opportunity_id,
+        fields.amount ? parseFloat(fields.amount) : null,
+        fields.currency || null
       ]
     );
 
