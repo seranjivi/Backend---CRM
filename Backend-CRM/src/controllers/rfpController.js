@@ -423,6 +423,8 @@ const getAllRFPs = async (fastify, request, reply) => {
       SELECT 
         r.id,
         COALESCE(o.opportunity_name, 'No Opportunity') as "opportunityName",
+        COALESCE(o.client_name, 'No Client') as "clientName",
+        r.opportunity_id as "opportunityId",
         r.title as "rfpTitle",
         r.status as "rfpStatus",
         r.submission_deadline as "submissionDeadline",
@@ -435,11 +437,10 @@ const getAllRFPs = async (fastify, request, reply) => {
     
     // For each RFP, get associated files
     const rfpsWithFiles = await Promise.all(rows.map(async (rfp) => {
-      // In src/controllers/rfpController.js, update the files query to use 'mime_type' instead of 'mimetype'
-const files = await client.query(
-  'SELECT id, original_filename, stored_filename, mime_type, size FROM rfp_documents WHERE rfp_id = $1',
-  [rfp.id]
-);
+      const files = await client.query(
+        'SELECT id, original_filename, stored_filename, mime_type, size FROM rfp_documents WHERE rfp_id = $1',
+        [rfp.id]
+      );
       return {
         ...rfp,
         files: files.rows
