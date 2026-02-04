@@ -442,8 +442,7 @@ const getAllRFPs = async (fastify, request, reply) => {
         r.submission_deadline as "submissionDeadline",
         r.created_at as "createdOn",
         r.amount,
-        r.currency,
-        r.response_submitted_date as "responseSubmittedDate"
+        r.currency
       FROM rfps r
       JOIN users u ON r.created_by = u.id
       LEFT JOIN opportunities o ON r.opportunity_id = o.id
