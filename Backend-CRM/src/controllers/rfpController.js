@@ -371,7 +371,9 @@ const getRFPById = async (fastify, request, reply) => {
         r.opportunity_id as "opportunityId",
         o.opportunity_name as "opportunityName",
         u.full_name as "createdBy",
-        u.email as "createdByEmail"
+        u.email as "createdByEmail",
+        r.amount,
+        r.currency
       FROM rfps r
       LEFT JOIN opportunities o ON r.opportunity_id = o.id
       LEFT JOIN users u ON r.created_by = u.id
@@ -438,7 +440,10 @@ const getAllRFPs = async (fastify, request, reply) => {
         r.title as "rfpTitle",
         r.status as "rfpStatus",
         r.submission_deadline as "submissionDeadline",
-        r.created_at as "createdOn"
+        r.created_at as "createdOn",
+        r.amount,
+        r.currency,
+        r.response_submitted_date as "responseSubmittedDate"
       FROM rfps r
       JOIN users u ON r.created_by = u.id
       LEFT JOIN opportunities o ON r.opportunity_id = o.id
