@@ -1,82 +1,50 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
-// Validate required environment variables
-const requiredEnvVars = ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD'];
-for (const envVar of requiredEnvVars) {
-  if (!process.env[envVar]) {
-    console.error(`Missing required environment variable: ${envVar}`);
-    process.exit(1);
-  }
+// Validate DATABASE_URL
+if (!process.env.DATABASE_URL) {
+  console.error('❌ Missing DATABASE_URL environment variable');
+  process.exit(1);
 }
 
+// Create PostgreSQL pool
 const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: parseInt(process.env.DB_PORT, 10),
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  ssl: process.env.DB_SSL === 'true' ? { 
-    rejectUnauthorized: false 
-  } : false,
-  connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT || '5000', 10),
-  idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || '30000', 10),
-  max: parseInt(process.env.DB_MAX_CLIENTS || '20', 10)
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false, // Required for Neon
+  },
+  max: 20, // Max clients in pool
+  idleTimeoutMillis: 30000, // 30 seconds
+  connectionTimeoutMillis: 20000, // 20 seconds (important for free tier wake-up)
 });
 
-// Test the database connection with timeout
+// Test DB connection (without crashing server)
 const testConnection = async () => {
-  const client = await pool.connect().catch(err => {
-    console.error('❌ Connection pool error:', err.message);
-    console.error('Connection details:', {
-      host: process.env.DB_HOST,
-      port: process.env.DB_PORT,
-      database: process.env.DB_NAME,
-      user: process.env.DB_USER,
-      ssl: process.env.DB_SSL === 'true'
-    });
-    process.exit(1);
-  });
-
   try {
+    const client = await pool.connect();
     const res = await client.query('SELECT NOW()');
-    console.log('✅ Successfully connected to PostgreSQL database');
-    console.log('Database server time:', res.rows[0].now);
-  } catch (err) {
-    console.error('❌ Database query error:', err.message);
-    console.error('Error details:', err);
-    process.exit(1);
-  } finally {
+    console.log('✅ Successfully connected to PostgreSQL');
+    console.log('Database time:', res.rows[0].now);
     client.release();
+  } catch (err) {
+    console.error('❌ Database connection error:', err.message);
+    console.error('⚠️ Server will continue running. DB might be sleeping (free tier).');
   }
 };
 
+// Run connection test
 testConnection();
 
-// Handle connection errors
+// Handle unexpected pool errors
 pool.on('error', (err) => {
-  console.error('Unexpected error on idle client', err);
-  process.exit(-1);
+  console.error('❌ Unexpected DB pool error:', err.message);
 });
 
-// Function to get a client from the pool
-const getClient = async () => {
-  const client = await pool.connect();
-  return client;
-};
-
-// Export the pool and query function for simple queries
+// Helper function for queries
 const query = (text, params) => pool.query(text, params);
 
+// Export pool & helpers
 module.exports = {
-  query,
-  getClient,
   pool,
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { 
-    rejectUnauthorized: false 
-  } : false,
-  max: process.env.DB_MAX_CLIENTS || 20,
-  idleTimeoutMillis: process.env.DB_IDLE_TIMEOUT || 30000,
-  connectionTimeoutMillis: process.env.DB_CONNECTION_TIMEOUT || 5000
+  query,
 };
