@@ -43,8 +43,12 @@ pool.on('error', (err) => {
 // Helper function for queries
 const query = (text, params) => pool.query(text, params);
 
+// Helper function to get a client from the pool
+const getClient = () => pool.connect();
+
 // Export pool & helpers
 module.exports = {
   pool,
   query,
+  getClient,
 };
