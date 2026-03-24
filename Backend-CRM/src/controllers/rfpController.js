@@ -603,8 +603,10 @@ const updateRFP = async (fastify, request, reply) => {
         question_submission_date = $10,
         response_submission_date = $11,
         comments = $12,
+        amount = $13,
+        currency = $14,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $13
+      WHERE id = $15
       RETURNING *`,
       [
         fields.title || '',
@@ -619,6 +621,8 @@ const updateRFP = async (fastify, request, reply) => {
         fields.question_submission_date ? new Date(fields.question_submission_date) : null,
         fields.response_submission_date ? new Date(fields.response_submission_date) : null,
         fields.comments,
+        fields.amount ? parseFloat(fields.amount) : null,
+        fields.currency || null,
         id
       ]
     );
