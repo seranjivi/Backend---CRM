@@ -35,7 +35,8 @@ const getRFPByOpportunityId = async (fastify, request, reply) => {
         r.created_at as "createdOn",
         r.opportunity_id as "opportunityId",
         o.opportunity_name as "opportunityName",
-        u.full_name as "createdBy"
+        u.full_name as "createdBy",
+        r.nextstep
       FROM rfps r
       LEFT JOIN opportunities o ON r.opportunity_id = o.id
       LEFT JOIN users u ON r.created_by = u.id
@@ -115,6 +116,7 @@ const createRFP = async (fastify, request, reply) => {
     comments: null,
     amount: null,
     currency: null,
+    nextstep: null,
     documents: {
       commercial: [],
       proposal: [],
@@ -174,7 +176,8 @@ const createRFP = async (fastify, request, reply) => {
               'responseSubmissionDate': 'response_submission_date',
               'opportunityId': 'opportunity_id',
               'amount': 'amount',
-              'currency': 'currency'
+              'currency': 'currency',
+              'nextstep': 'nextstep'
             };
             
             const dbField = dbFieldMap[part.fieldname] || part.fieldname;
@@ -189,7 +192,8 @@ const createRFP = async (fastify, request, reply) => {
         ...request.body,
         rfp_status: request.body.rfpStatus || request.body.rfp_status || 'Draft',
         amount: request.body.amount,
-        currency: request.body.currency
+        currency: request.body.currency,
+        nextstep: request.body.nextstep
       };
     }
 
@@ -216,8 +220,9 @@ const createRFP = async (fastify, request, reply) => {
         created_by,
         opportunity_id,
         amount,
-        currency
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) 
+        currency,
+        nextstep
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) 
       RETURNING *`,
       [
         fields.title || '',
@@ -235,7 +240,8 @@ const createRFP = async (fastify, request, reply) => {
         request.user?.id,
         fields.opportunity_id,
         fields.amount ? parseFloat(fields.amount) : null,
-        fields.currency || null
+        fields.currency || null,
+        fields.nextstep
       ]
     );
 
@@ -373,7 +379,8 @@ const getRFPById = async (fastify, request, reply) => {
         u.full_name as "createdBy",
         u.email as "createdByEmail",
         r.amount,
-        r.currency
+        r.currency,
+        r.nextstep
       FROM rfps r
       LEFT JOIN opportunities o ON r.opportunity_id = o.id
       LEFT JOIN users u ON r.created_by = u.id
@@ -426,7 +433,6 @@ const getRFPById = async (fastify, request, reply) => {
     if (client) client.release();
   }
 };
-// Get all RFPs
 const getAllRFPs = async (fastify, request, reply) => {
   let client;
   try {
@@ -442,7 +448,8 @@ const getAllRFPs = async (fastify, request, reply) => {
         r.submission_deadline as "submissionDeadline",
         r.created_at as "createdOn",
         r.amount,
-        r.currency
+        r.currency,
+        r.nextstep
       FROM rfps r
       JOIN users u ON r.created_by = u.id
       LEFT JOIN opportunities o ON r.opportunity_id = o.id
@@ -605,8 +612,9 @@ const updateRFP = async (fastify, request, reply) => {
         comments = $12,
         amount = $13,
         currency = $14,
+        nextstep = $15,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $15
+      WHERE id = $16
       RETURNING *`,
       [
         fields.title || '',
@@ -623,6 +631,7 @@ const updateRFP = async (fastify, request, reply) => {
         fields.comments,
         fields.amount ? parseFloat(fields.amount) : null,
         fields.currency || null,
+        fields.nextstep,
         id
       ]
     );
