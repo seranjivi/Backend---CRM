@@ -591,7 +591,7 @@ const updateRFP = async (fastify, request, reply) => {
       fields = {
         ...fields,
         ...request.body,
-        rfp_status: request.body.rfpStatus || request.body.rfp_status || fields.rfp_status
+        rfp_status: request.body.rfp_status || request.body.rfpStatus || fields.rfp_status
       };
     }
 
