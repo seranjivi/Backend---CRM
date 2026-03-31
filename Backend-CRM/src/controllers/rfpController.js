@@ -591,7 +591,7 @@ const updateRFP = async (fastify, request, reply) => {
       fields = {
         ...fields,
         ...request.body,
-        rfp_status: request.body.rfp_status || request.body.rfpStatus || fields.rfp_status
+        status: request.body.rfp_status || request.body.rfpStatus || fields.status
       };
     }
 
@@ -600,7 +600,7 @@ const updateRFP = async (fastify, request, reply) => {
       `UPDATE rfps SET
         title = $1,
         rfp_type = $2,
-        rfp_status = $3,
+        status = $3,
         rfp_description = $4,
         solution_description = $5,
         submission_deadline = $6,
@@ -619,7 +619,7 @@ const updateRFP = async (fastify, request, reply) => {
       [
         fields.title || '',
         fields.rfp_type,
-        fields.rfp_status,
+        fields.status,
         fields.rfp_description,
         fields.solution_description,
         fields.submission_deadline ? new Date(fields.submission_deadline) : null,
@@ -637,7 +637,7 @@ const updateRFP = async (fastify, request, reply) => {
     );
 
     // If status is 'Submitted', update opportunity approval stage to LEVEL_2_SOW
-    if (fields.rfp_status === 'Submitted' && fields.opportunity_id) {
+    if (fields.status === 'Submitted' && fields.opportunity_id) {
       await updateOpportunityApprovalStage(client, fields.opportunity_id, 'LEVEL_2_SOW');
     }
 
